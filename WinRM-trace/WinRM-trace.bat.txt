@@ -1,0 +1,51 @@
+@echo off
+ECHO These commands will enable tracing:
+@echo on
+logman create trace "WinRM-Trace" -ow -o %0\..\WinRM-Trace-%COMPUTERNAME%.etl -p "Microsoft-Windows-WinRM" 0xffffffffffffffff 0xff -nb 16 16 -bs 1024 -mode Circular -f bincirc -max 2048 -ets
+logman update trace "WinRM-Trace" -p {04C6E16D-B99F-4A3A-9B3E-B8325BBC781E} 0xffffffffffffffff 0xff -ets
+
+@rem Forwarding
+logman update trace "WinRM-Trace" -p "Microsoft-Windows-Forwarding" 0xffffffffffffffff 0xff -ets
+
+@rem Collector
+logman update trace "WinRM-Trace" -p "{B977CF02-76F6-DF84-CC1A-6A4B232322B6}" 0xffffffffffffffff 0xff -ets
+
+@rem Remote Shell
+logman update trace "WinRM-Trace" -p {F1CAB2C0-8BEB-4FA2-90E1-8F17E0ACDD5D} 0xffffffffffffffff 0xff -ets
+logman update trace "WinRM-Trace" -p {03992646-3DFE-4477-80E3-85936ACE7ABB} 0xffffffffffffffff 0xff -ets
+
+@rem HTTP
+logman update trace "WinRM-Trace" -p {72B18662-744E-4A68-B816-8D562289A850} 0xffffffffffffffff 0xff -ets
+logman update trace "WinRM-Trace" -p "Microsoft-Windows-WinHttp" 0xffffffffffffffff 0xff -ets
+logman update trace "WinRM-Trace" -p {B3A7698A-0C45-44DA-B73D-E181C9B5C8E6} 0xffffffffffffffff 0xff -ets
+logman update trace "WinRM-Trace" -p {DD5EF90A-6398-47A4-AD34-4DCECDEF795F} 0xffffffffffffffff 0xff -ets
+
+@rem CAPI
+logman update trace "WinRM-Trace" -p "Microsoft-Windows-CAPI2" 0xffffffffffffffff 0xff -ets
+
+@rem Kerberos
+logman update trace "WinRM-Trace" -p "{6B510852-3583-4E2D-AFFE-A67F9F223438}" 0xffffffffffffffff 0xff -ets
+logman update trace "WinRM-Trace" -p "{BBA3ADD2-C229-4CDB-AE2B-57EB6966B0C4}" 0xffffffffffffffff 0xff -ets
+logman update trace "WinRM-Trace" -p "{98E6CFCB-EE0A-41E0-A57B-622D4E1B30B1}" 0xffffffffffffffff 0xff -ets
+
+@rem NTLM
+logman update trace "WinRM-Trace" -p "{AC43300D-5FCC-4800-8E99-1BD3F85F0320}" 0xffffffffffffffff 0xff -ets
+logman update trace "WinRM-Trace" -p "{C92CF544-91B3-4DC0-8E11-C580339A0BF8}" 0xffffffffffffffff 0xff -ets
+logman update trace "WinRM-Trace" -p "{5BBB6C18-AA45-49B1-A15F-085F7ED0AA90}" 0xffffffffffffffff 0xff -ets
+
+@rem Schannel
+logman update trace "WinRM-Trace" -p "{1F678132-5938-4686-9FDC-C8FF68F15C85}" 0xffffffffffffffff 0xff -ets
+logman update trace "WinRM-Trace" -p "{37D2C3CD-C5D4-4587-8531-4696C44244C8}" 0xffffffffffffffff 0xff -ets
+
+@echo off
+echo
+ECHO Reproduce your issue and enter any key to stop tracing
+@echo on
+pause
+
+logman stop "WinRM-Trace" -ets
+tasklist /svc > %0\..\tasklist-%COMPUTERNAME%.txt
+
+@echo off
+echo Tracing has been captured, WMI-Trace.etl and tasklist.txt saved.
+pause
