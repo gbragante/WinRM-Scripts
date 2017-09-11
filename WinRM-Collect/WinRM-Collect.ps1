@@ -1,4 +1,4 @@
-$version = "WinRm-Collect (20170720)"
+$version = "WinRm-Collect (20170911)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -60,11 +60,29 @@ if ($env:PROCESSOR_ARCHITECTURE -eq "AMD64") {
 } else {
   $procdump = "procdump.exe"
 }
+if (-not (Test-Path ($root + "\" + $procdump))) {
+  $confirm = Read-Host ("The file " + $root + "\" + $procdump + " does not exist, the process dumps cannot be collected.`r`nDo you want to continue ? [Y / N]")
+  if ($confirm.ToLower() -ne "y") {exit}
+}
 
 Write-Log "Collecting dump of the svchost process hosting the WinRM service"
-$cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma WinRM """ + $resDir + "\Svchost.exe-WinRM.dmp""" + $RdrOut + $RdrErr
+$cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma -mk WinRM """ + $resDir + "\Svchost.exe-WinRM.dmp""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
+
+Write-Log "Collecing the dumps of wsmprovhost.exe processes"
+$list = get-process -Name "wsmprovhost" -ErrorAction Continue 2>>$errfile
+if (($list | measure).count -gt 0) {
+  foreach ($proc in $list)
+  {
+    Write-Log ("Found wsmprovhost.exe with PID " + $proc.Id)
+    $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma -mk " + $proc.Id + " """+ $resDir + "\wsmprovhost.exe_"+ $proc.id + ".dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
+    Write-Log $cmd
+    Invoke-Expression $cmd
+  }
+} else {
+  Write-Log "No wsmprovhost.exe processes found"
+}
 
 Write-Log "Retrieving subscriptions configuration"
 $cmd = "wecutil es 2>>""" + $errfile + """"
@@ -213,6 +231,11 @@ Invoke-Expression $cmd
 
 Write-Log "Exporting Event-ForwardingPlugin log"
 $cmd = "wevtutil epl Microsoft-Windows-Forwarding/Operational """+ $resDir + "\" + $env:computername + "-Event-ForwardingPlugin.evtx""" + $RdrOut + $RdrErr
+Write-Log $cmd
+Invoke-Expression $cmd
+
+Write-Log "Exporting PowerShell log"
+$cmd = "wevtutil epl Microsoft-Windows-PowerShell/Operational """+ $resDir + "\" + $env:computername + "-PowerShell.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
