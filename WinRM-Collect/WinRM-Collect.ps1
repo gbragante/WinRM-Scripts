@@ -1,4 +1,4 @@
-$version = "WinRm-Collect (20170911)"
+$version = "WinRm-Collect (20170918)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -125,6 +125,9 @@ $group = $objSID.Translate( [System.Security.Principal.NTAccount]).Value
 
 (" ") | Out-File -FilePath ($resDir + "\Groups.txt") -Append
 ($group + " = " + $strSID) | Out-File -FilePath ($resDir + "\Groups.txt") -Append
+
+Write-Log "Get-NetConnectionProfile output"
+Get-NetConnectionProfile | Out-File -FilePath ($resDir + "\NetConnectionProfile.txt") -Append
 
 Write-Log "Exporting firewall rules"
 $cmd = "netsh advfirewall firewall show rule name=all >""" + $resDir + "\FirewallRules.txt""" + $RdrErr
