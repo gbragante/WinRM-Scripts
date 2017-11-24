@@ -1,4 +1,4 @@
-$version = "WinRm-Collect (20170920)"
+$version = "WinRm-Collect (20171124)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -265,13 +265,30 @@ $cmd = "setspn -L " + $env:computername + " >>""" + $resDir + "\SPN.txt""" + $Rd
 Write-Log $cmd
 Invoke-Expression $cmd
 " " | Out-File ($resDir + "\SPN.txt") -Append
+
+"Searching HTTP/" + $env:computername + " in the domain" | Out-File ($resDir + "\SPN.txt") -Append
 $cmd = "setspn -Q HTTP/" + $env:computername + " >>""" + $resDir + "\SPN.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 " " | Out-File ($resDir + "\SPN.txt") -Append
+
+"Searching HTTP/" + $env:computername + " in the forest" | Out-File ($resDir + "\SPN.txt") -Append
+$cmd = "setspn -F -Q HTTP/" + $env:computername + " >>""" + $resDir + "\SPN.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression $cmd
+" " | Out-File ($resDir + "\SPN.txt") -Append
+
+"Searching WSMAN/" + $env:computername + " in the domain" | Out-File ($resDir + "\SPN.txt") -Append
 $cmd = "setspn -Q WSMAN/" + $env:computername + " >>""" + $resDir + "\SPN.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
+" " | Out-File ($resDir + "\SPN.txt") -Append
+
+"Searching WSMAN/" + $env:computername + " in the forest" | Out-File ($resDir + "\SPN.txt") -Append
+$cmd = "setspn -F -Q WSMAN/" + $env:computername + " >>""" + $resDir + "\SPN.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression $cmd
+" " | Out-File ($resDir + "\SPN.txt") -Append
 
 Write-Log "Collecting certificates details"
 $cmd = "Certutil -verifystore -v MY > """ + $resDir + "\Certificates-My.txt""" + $RdrErr
