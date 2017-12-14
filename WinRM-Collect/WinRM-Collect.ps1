@@ -1,4 +1,4 @@
-$version = "WinRm-Collect (20171124)"
+$version = "WinRm-Collect (20171214)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -258,6 +258,10 @@ Write-Log $cmd
 Invoke-Expression $cmd
 
 $cmd = "netsh http show urlacl >>""" + $resDir + "\netsh-http.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression $cmd
+
+$cmd = "netsh http show servicestate >>""" + $resDir + "\netsh-http.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
