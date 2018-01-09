@@ -1,4 +1,4 @@
-$version = "WinRm-Collect (20171214)"
+$version = "WinRm-Collect (20180109)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -66,7 +66,7 @@ if (-not (Test-Path ($root + "\" + $procdump))) {
 }
 
 Write-Log "Collecting dump of the svchost process hosting the WinRM service"
-$cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma -mk WinRM """ + $resDir + "\Svchost.exe-WinRM.dmp""" + $RdrOut + $RdrErr
+$cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma WinRM """ + $resDir + "\Svchost.exe-WinRM.dmp""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
@@ -76,7 +76,7 @@ if (($list | measure).count -gt 0) {
   foreach ($proc in $list)
   {
     Write-Log ("Found wsmprovhost.exe with PID " + $proc.Id)
-    $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma -mk " + $proc.Id + " """+ $resDir + "\wsmprovhost.exe_"+ $proc.id + ".dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
+    $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma " + $proc.Id + " """+ $resDir + "\wsmprovhost.exe_"+ $proc.id + ".dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
     Write-Log $cmd
     Invoke-Expression $cmd
   }
@@ -312,6 +312,9 @@ $PSVersionTable | Out-File -FilePath ($resDir + "\PSVersion.txt") -Append
 
 Write-Log "Copying ServerManager configuration"
 copy-item $env:APPDATA\Microsoft\Windows\ServerManager\ServerList.xml $resDir\ServerList.xml -ErrorAction Continue 2>>$errfile
+
+Write-Log "Collecting the list of installed hotfixes"
+Get-HotFix -ErrorAction SilentlyContinue 2>>$errfile | Sort-Object -Property InstalledOn | Out-File $resDir\hotfixes.txt
 
 Write-Log "Collecting details about running processes"
 $proc = ExecQuery -Namespace "root\cimv2" -Query "select CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine from Win32_Process"
