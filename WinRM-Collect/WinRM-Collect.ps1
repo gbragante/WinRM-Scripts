@@ -1,4 +1,4 @@
-$version = "WinRm-Collect (20180109)"
+$version = "WinRm-Collect (20180118)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -39,6 +39,7 @@ $outfile = $resDir + "\script-output.txt"
 $errfile = $resDir + "\script-errors.txt"
 $RdrOut =  " >>""" + $outfile + """"
 $RdrErr =  " 2>>""" + $errfile + """"
+$fqdn = [System.Net.Dns]::GetHostByName(($env:computerName)).HostName
 
 New-Item -itemtype directory -path $resDir | Out-Null
 
@@ -46,7 +47,6 @@ Write-Log $version
 Write-Log "Retrieving WinRM configuration"
 $config = Get-ChildItem WSMan:\localhost\ -Recurse -ErrorAction Continue 2>>$errfile
 if (!$config) {
-  $fqdn = [System.Net.Dns]::GetHostByName(($env:computerName)).HostName
   Write-Log ("Cannot connect to localhost, trying with FQDN " + $fqdn)
   Connect-WSMan -ComputerName $fqdn -ErrorAction Continue 2>>$errfile
   $config = Get-ChildItem WSMan:\$fqdn -Recurse -ErrorAction Continue 2>>$errfile
@@ -181,7 +181,6 @@ $cmd = "reg export HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\WinRM 
 Write-Log $cmd
 Invoke-Expression $cmd
 
-
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector"
 $cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector """+ $resDir + "\EventCollector.reg.txt"" /y" + $RdrOut + $RdrErr
 Write-Log $cmd
@@ -276,7 +275,19 @@ Write-Log $cmd
 Invoke-Expression $cmd
 " " | Out-File ($resDir + "\SPN.txt") -Append
 
+"Searching HTTP/" + $fqdn + " in the domain" | Out-File ($resDir + "\SPN.txt") -Append
+$cmd = "setspn -Q HTTP/" + $env:computername + " >>""" + $resDir + "\SPN.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression $cmd
+" " | Out-File ($resDir + "\SPN.txt") -Append
+
 "Searching HTTP/" + $env:computername + " in the forest" | Out-File ($resDir + "\SPN.txt") -Append
+$cmd = "setspn -F -Q HTTP/" + $env:computername + " >>""" + $resDir + "\SPN.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression $cmd
+" " | Out-File ($resDir + "\SPN.txt") -Append
+
+"Searching HTTP/" + $fqdn + " in the forest" | Out-File ($resDir + "\SPN.txt") -Append
 $cmd = "setspn -F -Q HTTP/" + $env:computername + " >>""" + $resDir + "\SPN.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
@@ -288,7 +299,19 @@ Write-Log $cmd
 Invoke-Expression $cmd
 " " | Out-File ($resDir + "\SPN.txt") -Append
 
+"Searching WSMAN/" + $fqdn + " in the domain" | Out-File ($resDir + "\SPN.txt") -Append
+$cmd = "setspn -Q WSMAN/" + $env:computername + " >>""" + $resDir + "\SPN.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression $cmd
+" " | Out-File ($resDir + "\SPN.txt") -Append
+
 "Searching WSMAN/" + $env:computername + " in the forest" | Out-File ($resDir + "\SPN.txt") -Append
+$cmd = "setspn -F -Q WSMAN/" + $env:computername + " >>""" + $resDir + "\SPN.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression $cmd
+" " | Out-File ($resDir + "\SPN.txt") -Append
+
+"Searching WSMAN/" + $fqdn + " in the forest" | Out-File ($resDir + "\SPN.txt") -Append
 $cmd = "setspn -F -Q WSMAN/" + $env:computername + " >>""" + $resDir + "\SPN.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
