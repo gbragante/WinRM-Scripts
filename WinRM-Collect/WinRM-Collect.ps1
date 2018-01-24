@@ -1,4 +1,4 @@
-$version = "WinRm-Collect (20180118)"
+$version = "WinRm-Collect (20180124)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -82,6 +82,23 @@ if (($list | measure).count -gt 0) {
   }
 } else {
   Write-Log "No wsmprovhost.exe processes found"
+}
+
+$proc = get-wmiobject -query "select processid from win32_service where name='WinRM'"
+if ($proc) {
+  $pidWinRM = $proc.ProcessId
+  Write-Log ("The PID of the WinRM service is: " + $pidWinRM)
+  $proc = get-wmiobject -query "select processid from win32_service where name='wecsvc'"
+  if ($proc) {
+    $pidWec = $proc.ProcessId
+    Write-Log ("The PID of the WecSvc service is: " + $pidWec)
+    if ($pidWinRM -ne $pidWec) {
+      Write-Log "WinRM and WecSvc are not in the same process"
+      $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma WecSvc """ + $resDir + "\Svchost.exe-WecSvc.dmp""" + $RdrOut + $RdrErr
+      Write-Log $cmd
+      Invoke-Expression $cmd
+    }
+  }
 }
 
 Write-Log "Retrieving subscriptions configuration"
