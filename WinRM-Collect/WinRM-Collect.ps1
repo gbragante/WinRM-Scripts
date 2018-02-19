@@ -1,4 +1,4 @@
-$version = "WinRm-Collect (20180124)"
+$version = "WinRm-Collect (20180219)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -40,6 +40,8 @@ $errfile = $resDir + "\script-errors.txt"
 $RdrOut =  " >>""" + $outfile + """"
 $RdrErr =  " 2>>""" + $errfile + """"
 $fqdn = [System.Net.Dns]::GetHostByName(($env:computerName)).HostName
+
+$OSVer = ([environment]::OSVersion.Version.Major) + ([environment]::OSVersion.Version.Minor) /10
 
 New-Item -itemtype directory -path $resDir | Out-Null
 
@@ -208,6 +210,11 @@ $cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\
 Write-Log $cmd
 Invoke-Expression $cmd
 
+Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\EventLog"
+$cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\EventLog """+ $resDir + "\EventLog-Policies.reg.txt"" /y" + $RdrOut + $RdrErr
+Write-Log $cmd
+Invoke-Expression $cmd
+
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL"
 $cmd = "reg export HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL """+ $resDir + "\SCHANNEL.reg.txt"" /y" + $RdrOut + $RdrErr
 Write-Log $cmd
@@ -267,6 +274,36 @@ Write-Log "Exporting System log"
 $cmd = "wevtutil epl System """+ $resDir + "\" + $env:computername + "-System.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
+
+if ($OSVer -gt 6.1 ) {
+  Write-Log "Copying ServerManager configuration"
+  copy-item $env:APPDATA\Microsoft\Windows\ServerManager\ServerList.xml $resDir\ServerList.xml -ErrorAction Continue 2>>$errfile
+
+  Write-Log "Exporting Microsoft-Windows-ServerManager-ConfigureSMRemoting/Operational log"
+  $cmd = "wevtutil epl Microsoft-Windows-ServerManager-ConfigureSMRemoting/Operational """+ $resDir + "\" + $env:computername + "-ServerManager-ConfigureSMRemoting.evtx""" + $RdrOut + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression $cmd
+
+  Write-Log "Exporting Microsoft-Windows-ServerManager-DeploymentProvider/Operational log"
+  $cmd = "wevtutil epl Microsoft-Windows-ServerManager-DeploymentProvider/Operational """+ $resDir + "\" + $env:computername + "-ServerManager-DeploymentProvider.evtx""" + $RdrOut + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression $cmd
+
+  Write-Log "Exporting Microsoft-Windows-ServerManager-MgmtProvider/Operational log"
+  $cmd = "wevtutil epl Microsoft-Windows-ServerManager-MgmtProvider/Operational """+ $resDir + "\" + $env:computername + "-ServerManager-MgmtProvider.evtx""" + $RdrOut + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression $cmd
+
+  Write-Log "Exporting Microsoft-Windows-ServerManager-MultiMachine/Operational log"
+  $cmd = "wevtutil epl Microsoft-Windows-ServerManager-MultiMachine/Operational """+ $resDir + "\" + $env:computername + "-ServerManager-MultiMachine.evtx""" + $RdrOut + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression $cmd
+
+  Write-Log "Exporting Microsoft-Windows-FileServices-ServerManager-EventProvider/Operational log"
+  $cmd = "wevtutil epl Microsoft-Windows-FileServices-ServerManager-EventProvider/Operational """+ $resDir + "\" + $env:computername + "-ServerManager-EventProvider.evtx""" + $RdrOut + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression $cmd
+}
 
 Write-Log "Exporting netsh http settings"
 $cmd = "netsh http show sslcert >>""" + $resDir + "\netsh-http.txt""" + $RdrErr
@@ -349,9 +386,6 @@ Invoke-Expression $cmd
 
 Write-Log "PowerShell version"
 $PSVersionTable | Out-File -FilePath ($resDir + "\PSVersion.txt") -Append
-
-Write-Log "Copying ServerManager configuration"
-copy-item $env:APPDATA\Microsoft\Windows\ServerManager\ServerList.xml $resDir\ServerList.xml -ErrorAction Continue 2>>$errfile
 
 Write-Log "Collecting the list of installed hotfixes"
 Get-HotFix -ErrorAction SilentlyContinue 2>>$errfile | Sort-Object -Property InstalledOn | Out-File $resDir\hotfixes.txt
