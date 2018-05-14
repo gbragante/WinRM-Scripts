@@ -1,4 +1,4 @@
-$version = "WinRm-Collect (20180219)"
+$version = "WinRm-Collect (20180514)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -21,6 +21,34 @@ Function ExecQuery {
   }
   Write-Log (($ret | measure).count.ToString() + " results")
   return $ret
+}
+
+Function ArchiveLog {
+  param( [string] $LogName )
+  $cmd = "wevtutil al """+ $resDir + "\" + $env:computername + "-" + $LogName + ".evtx"" /l:en-us >>""" + $outfile + """ 2>>""" + $errfile + """"
+  Write-Log $cmd
+  Invoke-Expression $cmd
+}
+
+
+Function EvtLogDetails {
+  param(
+    [string] $LogName
+  )
+  Write-Log ("Collecting the details for the " + $LogName + " log")
+  $cmd = "wevtutil gl " + $logname + " >>""" + $resDir + "\EventLogs.txt""" + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+
+  "" | Out-File -FilePath ($resDir + "\EventLogs.txt") -Append
+
+  if ($logname -ne "ForwardedEvents") {
+    $evt = (Get-WinEvent -Logname $LogName -MaxEvents 1 -Oldest)
+    "Oldest " + $evt.TimeCreated + " (" + $evt.RecordID + ")" | Out-File -FilePath ($resDir + "\EventLogs.txt") -Append
+    $evt = (Get-WinEvent -Logname $LogName -MaxEvents 1)
+    "Newest " + $evt.TimeCreated + " (" + $evt.RecordID + ")" | Out-File -FilePath ($resDir + "\EventLogs.txt") -Append
+    "" | Out-File -FilePath ($resDir + "\EventLogs.txt") -Append
+  }
 }
 
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -73,7 +101,7 @@ Write-Log $cmd
 Invoke-Expression $cmd
 
 Write-Log "Collecing the dumps of wsmprovhost.exe processes"
-$list = get-process -Name "wsmprovhost" -ErrorAction Continue 2>>$errfile
+$list = get-process -Name "wsmprovhost" -ErrorAction SilentlyContinue 2>>$errfile
 if (($list | measure).count -gt 0) {
   foreach ($proc in $list)
   {
@@ -244,36 +272,48 @@ Write-Log "Exporting CAPI2 log"
 $cmd = "wevtutil epl Microsoft-Windows-CAPI2/Operational """+ $resDir + "\" + $env:computername + "-capi2.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
+ArchiveLog "capi2"
 
 Write-Log "Exporting Windows Remote Management log"
 $cmd = "wevtutil epl Microsoft-Windows-WinRM/Operational """+ $resDir + "\" + $env:computername + "-WindowsRemoteManagement.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
+ArchiveLog "WindowsRemoteManagement"
 
 Write-Log "Exporting EventCollector log"
 $cmd = "wevtutil epl Microsoft-Windows-EventCollector/Operational """+ $resDir + "\" + $env:computername + "-EventCollector.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
+ArchiveLog "EventCollector"
 
 Write-Log "Exporting Event-ForwardingPlugin log"
 $cmd = "wevtutil epl Microsoft-Windows-Forwarding/Operational """+ $resDir + "\" + $env:computername + "-Event-ForwardingPlugin.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
+ArchiveLog "Event-ForwardingPlugin"
 
 Write-Log "Exporting PowerShell log"
 $cmd = "wevtutil epl Microsoft-Windows-PowerShell/Operational """+ $resDir + "\" + $env:computername + "-PowerShell.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
+ArchiveLog "PowerShell"
 
 Write-Log "Exporting Application log"
 $cmd = "wevtutil epl Application """+ $resDir + "\" + $env:computername + "-Application.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
+ArchiveLog "Application"
 
 Write-Log "Exporting System log"
 $cmd = "wevtutil epl System """+ $resDir + "\" + $env:computername + "-System.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
+ArchiveLog "System"
+
+EvtLogDetails "Application"
+EvtLogDetails "System"
+EvtLogDetails "Security"
+EvtLogDetails "ForwardedEvents"
 
 if ($OSVer -gt 6.1 ) {
   Write-Log "Copying ServerManager configuration"
@@ -391,7 +431,7 @@ Write-Log "Collecting the list of installed hotfixes"
 Get-HotFix -ErrorAction SilentlyContinue 2>>$errfile | Sort-Object -Property InstalledOn | Out-File $resDir\hotfixes.txt
 
 Write-Log "Collecting details about running processes"
-$proc = ExecQuery -Namespace "root\cimv2" -Query "select CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine from Win32_Process"
+$proc = ExecQuery -Namespace "root\cimv2" -Query "select Name, CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine from Win32_Process"
 if ($PSVersionTable.psversion.ToString() -ge "3.0") {
   $StartTime= @{e={$_.CreationDate.ToString("yyyyMMdd HH:mm:ss")};n="Start time"}
 } else {
