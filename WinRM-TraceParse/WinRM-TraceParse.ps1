@@ -1,4 +1,4 @@
-# WinRM-TraceParse - 20180612
+# WinRM-TraceParse - 20180621
 
 param (
   [string]$FileName
@@ -36,6 +36,9 @@ $col = New-Object system.Data.DataColumn Action,([string]); $tbEvt.Columns.Add($
 $col = New-Object system.Data.DataColumn Message,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Bookmarks,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Items,([string]); $tbEvt.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Dates,([string]); $tbEvt.Columns.Add($col)
+$col = New-Object system.Data.DataColumn MessageID,([string]); $tbEvt.Columns.Add($col)
+$col = New-Object system.Data.DataColumn RelatesTo,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn SessionID,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn ActivityID,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn OperationID,([string]); $tbEvt.Columns.Add($col)
@@ -84,11 +87,6 @@ while (-not $sr.EndOfStream) {
 
     # This is one of the SOAP lines
     if ($line -match  "index 1 of") {
-      #if ($line -match "16:36:06.2377171") {
-      #  Write-Host "Here we are"
-      #}
-      
-      #Write-Host $line
       if ($xmlLine[$thread]) {
         Write-Error ("Unclosed tag for thread " + $thread + " before " + $time)
         $xmlLine.Remove($thread)
@@ -124,6 +122,7 @@ while (-not $sr.EndOfStream) {
       $xmlLine[$thread] | Out-File -FilePath ($dirName + "\" + $FileName) 
       
       $xmlEvt = New-Object -TypeName System.Xml.XmlDocument
+      $xmlPL = New-Object -TypeName System.Xml.XmlDocument
 
       $xmlEvt.LoadXml($xmlLine[$thread])
       $xmlLine.Remove($thread)
@@ -144,16 +143,59 @@ while (-not $sr.EndOfStream) {
         }
         $row.Bookmarks = $blist
         $row.Items = $xmlEvt.Envelope.body.Events.Event.count
+
+        # Get lowest and highest events date for the packet
+        if ($xmlEvt.Envelope.Body.Events.FirstChild.'#cdata-section') {
+          $xmlPL.LoadXml($xmlEvt.Envelope.Body.Events.FirstChild.'#cdata-section')
+          $row.dates = $xmlpl.Event.System.TimeCreated.SystemTime + " - "
+          $xmlPL.LoadXml($xmlEvt.Envelope.Body.Events.LastChild.'#cdata-section')
+          $row.dates = $row.dates + $xmlpl.Event.System.TimeCreated.SystemTime  
+        }
       } elseif ($row.Message -eq "EnumerateResponse") {
+        if ($xmlEvt.Envelope.body.EnumerateResponse.Items.FirstChild.Name -eq "m:Subscription") {
           $row.Items = $xmlEvt.Envelope.body.EnumerateResponse.Items.ChildNodes.Count
+          $filesub = $dirName + "\" + $FileName.Replace("xml","subscriptions.txt")
+          foreach ($sub in $xmlEvt.Envelope.body.EnumerateResponse.Items) {
+            $sub.Subscription.Envelope.Header.OptionSet.Option[0].'#text' | Out-File $filesub
+            $sub.Subscription.Envelope.Body.Subscribe.EndTo.Address | Out-File $filesub -Append
+  
+            foreach ($qry in $sub.Subscription.Envelope.Body.Subscribe.filter.QueryList) {
+              $qry.Query.InnerXml | Out-File $filesub -Append
+            }
+  
+            foreach ($bm in $sub.Subscription.Envelope.Body.Subscribe.Bookmark.BookmarkList.Bookmark) {
+              $bm.Channel + " = " + $bm.RecordId | Out-File $filesub -Append
+            }
+            "" | Out-File $filesub -Append
+          }
+        } elseif ($xmlEvt.Envelope.body.EnumerateResponse.Items.FirstChild.Name -eq "w:Item") {
+          $row.Items = $xmlEvt.Envelope.body.EnumerateResponse.Items.ChildNodes.Count
+        }
       }
-      
+    
       if ($xmlEvt.Envelope.Header.Action.HasAttributes) {
         $row.Action = $xmlEvt.Envelope.Header.Action.'#text'
       } else {
         $row.Action = $xmlEvt.Envelope.Header.Action
       }
 
+      if ($xmlEvt.Envelope.Header.MessageID.HasAttributes) {
+        $msgId = ($xmlEvt.Envelope.Header.MessageID.'#text').substring(5)
+      } else {
+        $msgId = $xmlEvt.Envelope.Header.MessageID
+        if ($msgId) {
+          $msgId = $msgId.substring(5)
+        }
+      }
+      if ($xmlEvt.Envelope.Header.RelatesTo.HasAttributes) {
+        $relTo = ($xmlEvt.Envelope.Header.RelatesTo.'#text').substring(5)
+      } else {
+        $relTo = $xmlEvt.Envelope.Header.RelatesTo
+        if ($relTo) {
+          $relTo = $relTo.substring(5)
+        }
+      }
+      
       if ($xmlEvt.Envelope.Header.OperationID.HasAttributes) {
         $OpId = ($xmlEvt.Envelope.Header.OperationID.'#text').substring(5)
       } else {
@@ -189,6 +231,8 @@ while (-not $sr.EndOfStream) {
         }
       }
       $row.To = $To
+      $row.MessageID = $msgId
+      $row.RelatesTo = $relTo
       $row.SessionID = $SessId
       $row.ActivityID = $ActId
       $row.OperationID = $OpId
