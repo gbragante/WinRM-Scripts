@@ -1,7 +1,7 @@
-# WinRM-TraceParse - 20180621
+# WinRM-TraceParse - 20180623
 
 param (
-  [string]$FileName
+  [string]$InputFile
 )
 Function ReadLine {
   $line = ""
@@ -17,14 +17,14 @@ Function Write-Error {
   $msg | Out-File -FilePath ($dirName + "\script-errors.txt") -Append
 }
 
-if ($FileName -eq "") {
+if ($InputFile -eq "") {
   Write-Host "Trace filename not specified"
   exit
 }
 
 $lines = 0
 $xmlLine = @{}
-$dirName = $filename + "-" + $(get-date -f yyyyMMdd_HHmmss)
+$dirName = $InputFile + "-" + $(get-date -f yyyyMMdd_HHmmss)
 Write-Host $dirname
 New-Item -itemtype directory -path $dirname | Out-Null
 
@@ -34,20 +34,23 @@ $col = New-Object system.Data.DataColumn Type,([string]); $tbEvt.Columns.Add($co
 $col = New-Object system.Data.DataColumn To,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Action,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Message,([string]); $tbEvt.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Command,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Bookmarks,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Items,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Dates,([string]); $tbEvt.Columns.Add($col)
-$col = New-Object system.Data.DataColumn MessageID,([string]); $tbEvt.Columns.Add($col)
-$col = New-Object system.Data.DataColumn RelatesTo,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn SessionID,([string]); $tbEvt.Columns.Add($col)
+$col = New-Object system.Data.DataColumn ShellID,([string]); $tbEvt.Columns.Add($col)
+$col = New-Object system.Data.DataColumn CommandID,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn ActivityID,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn OperationID,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn OperationTimeout,([string]); $tbEvt.Columns.Add($col)
+$col = New-Object system.Data.DataColumn MessageID,([string]); $tbEvt.Columns.Add($col)
+$col = New-Object system.Data.DataColumn RelatesTo,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn FileName,([string]); $tbEvt.Columns.Add($col)
 
 $dtStart = Get-Date
 
-$sr = new-object System.io.streamreader(get-item $FileName)
+$sr = new-object System.io.streamreader(get-item $InputFile)
 $line = $sr.ReadLine()
 $lines = $lines + 1
 while (-not $sr.EndOfStream) {
@@ -124,7 +127,7 @@ while (-not $sr.EndOfStream) {
       $xmlEvt = New-Object -TypeName System.Xml.XmlDocument
       $xmlPL = New-Object -TypeName System.Xml.XmlDocument
 
-      $xmlEvt.LoadXml($xmlLine[$thread])
+      $xmlEvt.LoadXml($xmlLine[$thread]) 
       $xmlLine.Remove($thread)
 
       $row = $tbEvt.NewRow()
@@ -134,6 +137,15 @@ while (-not $sr.EndOfStream) {
       $row.Message = $xmlEvt.Envelope.Body.FirstChild.LocalName
       if ($row.Message -eq "Fault") {
         $row.Message = $xmlEvt.Envelope.Body.Fault.Reason.text.'#text'
+      }
+
+      if ($xmlEvt.Envelope.Header.MessageID.HasAttributes) {
+        $msgId = ($xmlEvt.Envelope.Header.MessageID.'#text').substring(5)
+      } else {
+        $msgId = $xmlEvt.Envelope.Header.MessageID
+        if ($msgId) {
+          $msgId = $msgId.substring(5)
+        }
       }
 
       if ($row.Message -eq "Events") {
@@ -171,6 +183,16 @@ while (-not $sr.EndOfStream) {
         } elseif ($xmlEvt.Envelope.body.EnumerateResponse.Items.FirstChild.Name -eq "w:Item") {
           $row.Items = $xmlEvt.Envelope.body.EnumerateResponse.Items.ChildNodes.Count
         }
+      } elseif ($row.Message -eq "CommandLine") {
+        $row.Command = $xmlEvt.Envelope.body.CommandLine.Command
+      } elseif ($xmlEvt.Envelope.Header.ResourceURI.'#text') {
+        if ($xmlEvt.Envelope.Header.ResourceURI.'#text'.IndexOf("cim-schema") -gt 0) {
+          $cmdWMI = ""
+          foreach ($sel in $xmlEvt.Envelope.Header.SelectorSet.Selector) {
+            $cmdWMI = $cmdWMI + $sel.'#text' + " "
+          }
+          $row.Command = $cmdWMI
+        }
       }
     
       if ($xmlEvt.Envelope.Header.Action.HasAttributes) {
@@ -179,14 +201,6 @@ while (-not $sr.EndOfStream) {
         $row.Action = $xmlEvt.Envelope.Header.Action
       }
 
-      if ($xmlEvt.Envelope.Header.MessageID.HasAttributes) {
-        $msgId = ($xmlEvt.Envelope.Header.MessageID.'#text').substring(5)
-      } else {
-        $msgId = $xmlEvt.Envelope.Header.MessageID
-        if ($msgId) {
-          $msgId = $msgId.substring(5)
-        }
-      }
       if ($xmlEvt.Envelope.Header.RelatesTo.HasAttributes) {
         $relTo = ($xmlEvt.Envelope.Header.RelatesTo.'#text').substring(5)
       } else {
@@ -213,6 +227,26 @@ while (-not $sr.EndOfStream) {
       } else {
         $SessID = ""
       }
+
+      $ShlID = ""
+      if ($xmlEvt.Envelope.Header.SelectorSet.Selector.Name) {
+        if ($xmlEvt.Envelope.Header.SelectorSet.Selector.Name -eq "ShellID") {
+          $ShlID = $xmlEvt.Envelope.Header.SelectorSet.Selector.'#text'
+        }
+      }
+
+      $cmdID = ""
+      if ($ShlID) {
+        if ($xmlEvt.Envelope.Body.Receive.DesiredStream.CommandId) {
+          $cmdID = $xmlEvt.Envelope.Body.Receive.DesiredStream.CommandId
+        } elseif ($xmlEvt.Envelope.Body.CommandLine.CommandId) {
+          $cmdID = $xmlEvt.Envelope.Body.CommandLine.CommandId
+        } elseif ($xmlEvt.Envelope.Body.Signal.CommandId) {
+          $cmdID = $xmlEvt.Envelope.Body.Signal.CommandId
+          $row.Command = ($xmlEvt.Envelope.Body.Signal.Code).Replace("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/signal/","")
+        }
+      }
+
       if ($xmlEvt.Envelope.Header.ActivityID) {
         if ($xmlEvt.Envelope.Header.ActivityID.HasAttributes) {
           $ActID = ($xmlEvt.Envelope.Header.ActivityID.'#text').substring(5)
@@ -224,16 +258,23 @@ while (-not $sr.EndOfStream) {
       }
 
       $To = $xmlEvt.Envelope.Header.To
-      if ($OpId -ne "") {
-        if ($To -eq "http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous" -and $OpId -ne "") {
-          $aOpId = $tbEvt.Select("OperationID = '" + $OpId + "'")
-          if ($aOpId.Count -gt 0) { $To = $aOpId[0].To }
-        }
+
+      if ($relTo) {
+        $aRel = $tbEvt.Select("MessageID = '" + $relTo + "'")
+        $To = $aRel[0].To
+        $SessID = $aRel[0].SessionID
+        $ShlID = $aRel[0].ShellID
+        $cmdID = $aRel[0].CommandID
+        $ActID = $aRel[0].ActivityID
+        $OpId = $aRel[0].OperationID
       }
+
       $row.To = $To
       $row.MessageID = $msgId
       $row.RelatesTo = $relTo
       $row.SessionID = $SessId
+      $row.ShellID = $ShlID
+      $row.CommandID = $cmdID
       $row.ActivityID = $ActId
       $row.OperationID = $OpId
       $row.OperationTimeout = $xmlEvt.Envelope.Header.OperationTimeout
@@ -251,7 +292,7 @@ while (-not $sr.EndOfStream) {
 
 $sr.Close()
 
-$tbEvt | Export-Csv ($dirName + "\Events.csv") -noType
+$tbEvt | Export-Csv ($dirName + "\events-" + (Get-Item $InputFile).BaseName +".tsv") -noType -Delimiter "`t"
 
 $duration = New-TimeSpan -Start $dtStart -End (Get-Date)
 Write-Host "Execution completed in" $duration
