@@ -1,4 +1,4 @@
-# WinRM-TraceParse - 20180623
+# WinRM-TraceParse - 20180703
 
 param (
   [string]$InputFile
@@ -233,6 +233,8 @@ while (-not $sr.EndOfStream) {
         if ($xmlEvt.Envelope.Header.SelectorSet.Selector.Name -eq "ShellID") {
           $ShlID = $xmlEvt.Envelope.Header.SelectorSet.Selector.'#text'
         }
+      } elseif ($xmlEvt.Envelope.Body.Shell.ShellId) {
+        $ShlID = $xmlEvt.Envelope.Body.Shell.ShellId
       }
 
       $cmdID = ""
