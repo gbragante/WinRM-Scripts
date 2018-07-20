@@ -1,4 +1,4 @@
-# WinRM-TraceParse - 20180703
+# WinRM-TraceParse - 20180716
 
 param (
   [string]$InputFile
@@ -38,6 +38,7 @@ $col = New-Object system.Data.DataColumn Command,([string]); $tbEvt.Columns.Add(
 $col = New-Object system.Data.DataColumn Bookmarks,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Items,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Dates,([string]); $tbEvt.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Computer,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn SessionID,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn ShellID,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn CommandID,([string]); $tbEvt.Columns.Add($col)
@@ -148,8 +149,9 @@ while (-not $sr.EndOfStream) {
         }
       }
 
+      $blist = ""
+      $computer = ""
       if ($row.Message -eq "Events") {
-        $blist = ""
         foreach ($bookmark in $xmlEvt.Envelope.Header.Bookmark.BookmarkList.Bookmark) {
           $blist += $bookmark.Channel + " = " + $bookmark.RecordId + " "
         }
@@ -161,7 +163,8 @@ while (-not $sr.EndOfStream) {
           $xmlPL.LoadXml($xmlEvt.Envelope.Body.Events.FirstChild.'#cdata-section')
           $row.dates = $xmlpl.Event.System.TimeCreated.SystemTime + " - "
           $xmlPL.LoadXml($xmlEvt.Envelope.Body.Events.LastChild.'#cdata-section')
-          $row.dates = $row.dates + $xmlpl.Event.System.TimeCreated.SystemTime  
+          $row.dates = $row.dates + $xmlpl.Event.System.TimeCreated.SystemTime 
+          $Computer = $xmlpl.Event.System.Computer 
         }
       } elseif ($row.Message -eq "EnumerateResponse") {
         if ($xmlEvt.Envelope.body.EnumerateResponse.Items.FirstChild.Name -eq "m:Subscription") {
@@ -269,9 +272,11 @@ while (-not $sr.EndOfStream) {
         $cmdID = $aRel[0].CommandID
         $ActID = $aRel[0].ActivityID
         $OpId = $aRel[0].OperationID
+        $computer = $aRel[0].Computer
       }
 
       $row.To = $To
+      $row.Computer = $computer
       $row.MessageID = $msgId
       $row.RelatesTo = $relTo
       $row.SessionID = $SessId
