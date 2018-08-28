@@ -1,4 +1,4 @@
-$version = "WinRm-Collect (20180514)"
+$version = "WinRm-Collect (20180828)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -30,7 +30,6 @@ Function ArchiveLog {
   Invoke-Expression $cmd
 }
 
-
 Function EvtLogDetails {
   param(
     [string] $LogName
@@ -48,6 +47,45 @@ Function EvtLogDetails {
     $evt = (Get-WinEvent -Logname $LogName -MaxEvents 1)
     "Newest " + $evt.TimeCreated + " (" + $evt.RecordID + ")" | Out-File -FilePath ($resDir + "\EventLogs.txt") -Append
     "" | Out-File -FilePath ($resDir + "\EventLogs.txt") -Append
+  }
+}
+
+Function Win10Ver {
+  param(
+    [string] $Build
+  )
+  if ($build -eq 14393) {
+    return " (RS1 / 1607)"
+  } elseif ($build -eq 15063) {
+    return " (RS2 / 1703)"
+  } elseif ($build -eq 16299) {
+    return " (RS3 / 1709)"
+  } elseif ($build -eq 17134) {
+    return " (RS4 / 1803)"
+  }
+}
+
+Add-Type -MemberDefinition @"
+[DllImport("netapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+public static extern uint NetApiBufferFree(IntPtr Buffer);
+[DllImport("netapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+public static extern int NetGetJoinInformation(
+  string server,
+  out IntPtr NameBuffer,
+  out int BufferType);
+"@ -Namespace Win32Api -Name NetApi32
+
+function GetNBDomainName {
+  $pNameBuffer = [IntPtr]::Zero
+  $joinStatus = 0
+  $apiResult = [Win32Api.NetApi32]::NetGetJoinInformation(
+    $null,               # lpServer
+    [Ref] $pNameBuffer,  # lpNameBuffer
+    [Ref] $joinStatus    # BufferType
+  )
+  if ( $apiResult -eq 0 ) {
+    [Runtime.InteropServices.Marshal]::PtrToStringAuto($pNameBuffer)
+    [Void] [Win32Api.NetApi32]::NetApiBufferFree($pNameBuffer)
   }
 }
 
@@ -84,6 +122,16 @@ if (!$config) {
 }
 
 $config | out-string -Width 500 | out-file -FilePath ($resDir + "\WinRM-config.txt")
+
+Write-Log "winrm get winrm/config"
+$cmd = "winrm get winrm/config >>""" + $resDir + "\WinRM-config.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+
+Write-Log "winrm e winrm/config/listener"
+$cmd = "winrm e winrm/config/listener >>""" + $resDir + "\WinRM-config.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
 if ($env:PROCESSOR_ARCHITECTURE -eq "AMD64") {
   $procdump = "procdump64.exe"
@@ -175,6 +223,9 @@ $group = $objSID.Translate( [System.Security.Principal.NTAccount]).Value
 
 Write-Log "Get-NetConnectionProfile output"
 Get-NetConnectionProfile | Out-File -FilePath ($resDir + "\NetConnectionProfile.txt") -Append
+
+Write-Log "Get-WSManCredSSP output"
+Get-WSManCredSSP | Out-File -FilePath ($resDir + "\WSManCredSSP.txt") -Append
 
 Write-Log "Exporting firewall rules"
 $cmd = "netsh advfirewall firewall show rule name=all >""" + $resDir + "\FirewallRules.txt""" + $RdrErr
@@ -268,6 +319,23 @@ $cmd = "reg export HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\HTTP """
 Write-Log $cmd
 Invoke-Expression $cmd
 
+Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowFreshCredentials"
+$cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowFreshCredentials """+ $resDir + "\AllowFreshCredentials.reg.txt"" /y" + $RdrOut + $RdrErr
+Write-Log $cmd
+Invoke-Expression $cmd
+
+Write-Log "Exporting System log"
+$cmd = "wevtutil epl System """+ $resDir + "\" + $env:computername + "-System.evtx""" + $RdrOut + $RdrErr
+Write-Log $cmd
+Invoke-Expression $cmd
+ArchiveLog "System"
+
+Write-Log "Exporting Application log"
+$cmd = "wevtutil epl Application """+ $resDir + "\" + $env:computername + "-Application.evtx""" + $RdrOut + $RdrErr
+Write-Log $cmd
+Invoke-Expression $cmd
+ArchiveLog "Application"
+
 Write-Log "Exporting CAPI2 log"
 $cmd = "wevtutil epl Microsoft-Windows-CAPI2/Operational """+ $resDir + "\" + $env:computername + "-capi2.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
@@ -292,23 +360,25 @@ Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "Event-ForwardingPlugin"
 
-Write-Log "Exporting PowerShell log"
-$cmd = "wevtutil epl Microsoft-Windows-PowerShell/Operational """+ $resDir + "\" + $env:computername + "-PowerShell.evtx""" + $RdrOut + $RdrErr
+Write-Log "Exporting PowerShell/Operational log"
+$cmd = "wevtutil epl Microsoft-Windows-PowerShell/Operational """+ $resDir + "\" + $env:computername + "-PowerShell-Operational.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
-ArchiveLog "PowerShell"
+ArchiveLog "PowerShell-Operational"
 
-Write-Log "Exporting Application log"
-$cmd = "wevtutil epl Application """+ $resDir + "\" + $env:computername + "-Application.evtx""" + $RdrOut + $RdrErr
+Write-Log "Exporting Windows PowerShell log"
+$cmd = "wevtutil epl ""Windows PowerShell"" """+ $resDir + "\" + $env:computername + "-WindowsPowerShell.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
-ArchiveLog "Application"
+ArchiveLog "WindowsPowerShell"
 
-Write-Log "Exporting System log"
-$cmd = "wevtutil epl System """+ $resDir + "\" + $env:computername + "-System.evtx""" + $RdrOut + $RdrErr
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "System"
+if (Get-WinEvent -ListLog Microsoft-ServerManagementExperience -ErrorAction SilentlyContinue) {
+  Write-Log "Exporting Windows Admin Center log"
+  $cmd = "wevtutil epl Microsoft-ServerManagementExperience """+ $resDir + "\" + $env:computername + "-WindowsAdminCenter.evtx""" + $RdrOut + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression $cmd
+  ArchiveLog "WindowsAdminCenter"
+}
 
 EvtLogDetails "Application"
 EvtLogDetails "System"
@@ -355,6 +425,10 @@ Write-Log $cmd
 Invoke-Expression $cmd
 
 $cmd = "netsh http show servicestate >>""" + $resDir + "\netsh-http.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression $cmd
+
+$cmd = "netsh http show iplisten >>""" + $resDir + "\netsh-http.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
@@ -428,7 +502,7 @@ Write-Log "PowerShell version"
 $PSVersionTable | Out-File -FilePath ($resDir + "\PSVersion.txt") -Append
 
 Write-Log "Collecting the list of installed hotfixes"
-Get-HotFix -ErrorAction SilentlyContinue 2>>$errfile | Sort-Object -Property InstalledOn | Out-File $resDir\hotfixes.txt
+Get-HotFix -ErrorAction SilentlyContinue 2>>$errfile | Sort-Object -Property InstalledOn -ErrorAction SilentlyContinue | Out-File $resDir\hotfixes.txt
 
 Write-Log "Collecting details about running processes"
 $proc = ExecQuery -Namespace "root\cimv2" -Query "select Name, CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine from Win32_Process"
@@ -476,13 +550,14 @@ if ($proc) {
   "Free physical memory".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.FreePhysicalMemory/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Paging files size / free".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.SizeStoredInPagingFiles/1kb)) + " MB / " + ("{0:N0}" -f ($OS.FreeSpaceInPagingFiles/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Operating System".PadRight($pad) + " : " + $OS.Caption + " " + $OS.OSArchitecture | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Build Number".PadRight($pad) + " : " + $OS.BuildNumber | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Build Number".PadRight($pad) + " : " + $OS.BuildNumber + (Win10Ver $OS.BuildNumber)| Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Time zone".PadRight($pad) + " : " + $TZ.Description | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Install date".PadRight($pad) + " : " + $OS.InstallDate | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Last boot time".PadRight($pad) + " : " + $OS.LastBootUpTime | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Local time".PadRight($pad) + " : " + $OS.LocalDateTime | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "DNS Hostname".PadRight($pad) + " : " + $CS.DNSHostName | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Domain".PadRight($pad) + " : " + $CS.Domain | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "DNS Domain name".PadRight($pad) + " : " + $CS.Domain | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "NetBIOS Domain name".PadRight($pad) + " : " + (GetNBDomainName) | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   $roles = "Standalone Workstation", "Member Workstation", "Standalone Server", "Member Server", "Backup Domain Controller", "Primary Domain Controller"
   "Domain role".PadRight($pad) + " : " + $roles[$CS.DomainRole] | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
 } else {
