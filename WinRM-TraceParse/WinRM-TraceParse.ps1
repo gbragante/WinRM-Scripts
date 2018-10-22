@@ -1,4 +1,5 @@
-# WinRM-TraceParse - 20180716
+# WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
+# Version 20181022
 
 param (
   [string]$InputFile
@@ -170,15 +171,15 @@ while (-not $sr.EndOfStream) {
         if ($xmlEvt.Envelope.body.EnumerateResponse.Items.FirstChild.Name -eq "m:Subscription") {
           $row.Items = $xmlEvt.Envelope.body.EnumerateResponse.Items.ChildNodes.Count
           $filesub = $dirName + "\" + $FileName.Replace("xml","subscriptions.txt")
-          foreach ($sub in $xmlEvt.Envelope.body.EnumerateResponse.Items) {
-            $sub.Subscription.Envelope.Header.OptionSet.Option[0].'#text' | Out-File $filesub
-            $sub.Subscription.Envelope.Body.Subscribe.EndTo.Address | Out-File $filesub -Append
+          foreach ($sub in $xmlEvt.Envelope.body.EnumerateResponse.Items.ChildNodes) {
+            $sub.Envelope.Header.OptionSet.Option[0].'#text' | Out-File $filesub -Append #Subscription name
+            $sub.Envelope.Body.Subscribe.EndTo.Address | Out-File $filesub -Append #Subscription address
   
-            foreach ($qry in $sub.Subscription.Envelope.Body.Subscribe.filter.QueryList) {
+            foreach ($qry in $sub.Envelope.Body.Subscribe.filter.QueryList) {
               $qry.Query.InnerXml | Out-File $filesub -Append
             }
   
-            foreach ($bm in $sub.Subscription.Envelope.Body.Subscribe.Bookmark.BookmarkList.Bookmark) {
+            foreach ($bm in $sub.Envelope.Body.Subscribe.Bookmark.BookmarkList.Bookmark) {
               $bm.Channel + " = " + $bm.RecordId | Out-File $filesub -Append
             }
             "" | Out-File $filesub -Append
