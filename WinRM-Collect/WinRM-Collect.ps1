@@ -1,4 +1,4 @@
-$version = "WinRm-Collect (20181029)"
+$version = "WinRm-Collect (20181106)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -225,6 +225,42 @@ $group = $objSID.Translate( [System.Security.Principal.NTAccount]).Value
 
 (" ") | Out-File -FilePath ($resDir + "\Groups.txt") -Append
 ($group + " = " + $strSID) | Out-File -FilePath ($resDir + "\Groups.txt") -Append
+
+Write-Log "Get-Culture output"
+"Get-Culture" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+Get-Culture | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+
+Write-Log "Get-WinSystemLocale output"
+"Get-WinSystemLocale" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+Get-WinSystemLocale | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+
+Write-Log "Get-WinHomeLocation output"
+"Get-WinHomeLocation" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+Get-WinHomeLocation | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+
+Write-Log "Get-WinUILanguageOverride output"
+"Get-WinUILanguageOverride" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+Get-WinUILanguageOverride | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+
+Write-Log "Get-WinUserLanguageList output"
+"Get-WinUserLanguageList" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+Get-WinUserLanguageList | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+
+Write-Log "Get-WinAcceptLanguageFromLanguageListOptOut output"
+"Get-WinAcceptLanguageFromLanguageListOptOut" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+Get-WinAcceptLanguageFromLanguageListOptOut | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+
+Write-Log "Get-WinCultureFromLanguageListOptOut output"
+"Get-Get-WinCultureFromLanguageListOptOut" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+Get-WinCultureFromLanguageListOptOut | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+
+Write-Log "Get-WinDefaultInputMethodOverride output"
+"Get-WinDefaultInputMethodOverride" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+Get-WinDefaultInputMethodOverride | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+
+Write-Log "Get-WinLanguageBarOption output"
+"Get-WinLanguageBarOption" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+Get-WinLanguageBarOption | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
 
 Write-Log "Get-NetConnectionProfile output"
 Get-NetConnectionProfile | Out-File -FilePath ($resDir + "\NetConnectionProfile.txt") -Append
