@@ -1,4 +1,4 @@
-$version = "WinRm-Collect (20181106)"
+$version = "WinRm-Collect (20181128)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -87,6 +87,20 @@ function GetNBDomainName {
     [Runtime.InteropServices.Marshal]::PtrToStringAuto($pNameBuffer)
     [Void] [Win32Api.NetApi32]::NetApiBufferFree($pNameBuffer)
   }
+}
+
+Function GetStore($store) {
+  $certlist = Get-ChildItem ("Cert:\LocalMachine\" + $store)
+
+  foreach ($cert in $certlist) {
+    $row = $tbcert.NewRow()
+    $row.Store = $store
+    $row.Thumbprint = $cert.Thumbprint
+    $row.Subject = $cert.Subject
+    $row.Issuer = $cert.Issuer
+    $row.NotAfter = $cert.NotAfter
+    $tbcert.Rows.Add($row)
+  } 
 }
 
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -421,6 +435,12 @@ Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "WindowsPowerShell"
 
+Write-Log "Exporting Windows Group Policy log"
+$cmd = "wevtutil epl ""Microsoft-Windows-GroupPolicy/Operational"" """+ $resDir + "\" + $env:computername + "-GroupPolicy.evtx""" + $RdrOut + $RdrErr
+Write-Log $cmd
+Invoke-Expression $cmd
+ArchiveLog "GroupPolicy"
+
 if (Get-WinEvent -ListLog Microsoft-ServerManagementExperience -ErrorAction SilentlyContinue) {
   Write-Log "Exporting Windows Admin Center log"
   $cmd = "wevtutil epl Microsoft-ServerManagementExperience """+ $resDir + "\" + $env:computername + "-WindowsAdminCenter.evtx""" + $RdrOut + $RdrErr
@@ -546,6 +566,28 @@ Invoke-Expression $cmd
 $cmd = "Certutil -verifystore -v CA > """ + $resDir + "\Certificates-Intermediate.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
+
+$Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
+$tbCert = New-Object system.Data.DataTable
+$col = New-Object system.Data.DataColumn Store,([string]); $tbCert.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Thumbprint,([string]); $tbCert.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Subject,([string]); $tbCert.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Issuer,([string]); $tbCert.Columns.Add($col)
+$col = New-Object system.Data.DataColumn NotAfter,([DateTime]); $tbCert.Columns.Add($col)
+$col = New-Object system.Data.DataColumn IssuerThumbprint,([string]); $tbCert.Columns.Add($col)
+
+GetStore "My"
+GetStore "CA"
+GetStore "Root"
+
+$aCert = $tbCert.Select("Store = 'My'")
+foreach ($cert in $aCert) {
+  $aIssuer = $tbCert.Select("Subject = '" + ($cert.Issuer).tostring() + "'")
+  if ($aIssuer.Count -gt 0) {
+    $cert.IssuerThumbprint = ($aIssuer[0].Thumbprint).ToString()
+  }
+}
+$tbcert | Export-Csv ($resDir + "\certificates.tsv") -noType -Delimiter "`t"
 
 Write-Log "PowerShell version"
 $PSVersionTable | Out-File -FilePath ($resDir + "\PSVersion.txt") -Append
