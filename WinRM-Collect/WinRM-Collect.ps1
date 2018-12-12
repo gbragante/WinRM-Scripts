@@ -1,4 +1,4 @@
-$version = "WinRm-Collect (20181128)"
+$version = "WinRm-Collect (20181212)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -62,6 +62,8 @@ Function Win10Ver {
     return " (RS3 / 1709)"
   } elseif ($build -eq 17134) {
     return " (RS4 / 1803)"
+  } elseif ($build -eq 17763) {
+    return " (RS5 / 1809)"
   }
 }
 
@@ -87,6 +89,39 @@ function GetNBDomainName {
     [Runtime.InteropServices.Marshal]::PtrToStringAuto($pNameBuffer)
     [Void] [Win32Api.NetApi32]::NetApiBufferFree($pNameBuffer)
   }
+}
+
+Function FindSep {
+  param( [string]$FindIn, [string]$Left,[string]$Right )
+
+  if ($left -eq "") {
+    $Start = 0
+  } else {
+    $Start = $FindIn.IndexOf($Left) 
+    if ($Start -gt 0 ) {
+      $Start = $Start + $Left.Length
+    } else {
+       return ""
+    }
+  }
+
+  if ($Right -eq "") {
+    $End = $FindIn.Substring($Start).Length
+  } else {
+    $End = $FindIn.Substring($Start).IndexOf($Right)
+    if ($end -le 0) {
+      return ""
+    }
+  }
+  $Found = $FindIn.Substring($Start, $End)
+  return $Found
+}
+
+Function Write-Diag {
+  param( [string] $msg )
+  $msg = (get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " " + $msg
+  Write-Host $msg
+  $msg | Out-File -FilePath $diagfile -Append
 }
 
 Function GetStore($store) {
@@ -115,6 +150,7 @@ $Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
 
 $resName = "WinRM-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
 $resDir = $Root + "\" + $resName
+$diagfile = $resDir + "\WinRM-Diag.txt"
 $outfile = $resDir + "\script-output.txt"
 $errfile = $resDir + "\script-errors.txt"
 $RdrOut =  " >>""" + $outfile + """"
@@ -554,6 +590,8 @@ Write-Log $cmd
 Invoke-Expression $cmd
 " " | Out-File ($resDir + "\SPN.txt") -Append
 
+
+
 Write-Log "Collecting certificates details"
 $cmd = "Certutil -verifystore -v MY > """ + $resDir + "\Certificates-My.txt""" + $RdrErr
 Write-Log $cmd
@@ -658,6 +696,22 @@ if ($proc) {
   "NetBIOS Domain name".PadRight($pad) + " : " + (GetNBDomainName) | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   $roles = "Standalone Workstation", "Member Workstation", "Standalone Server", "Member Server", "Backup Domain Controller", "Primary Domain Controller"
   "Domain role".PadRight($pad) + " : " + $roles[$CS.DomainRole] | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+
+  $drives = @()
+  $drvtype = "Unknown", "No Root Directory", "Removable Disk", "Local Disk", "Network Drive", "Compact Disc", "RAM Disk"
+  $Vol = ExecQuery -NameSpace "root\cimv2" -Query "select * from Win32_LogicalDisk"
+  foreach ($disk in $vol) {
+    $drv = New-Object PSCustomObject
+    $drv | Add-Member -type NoteProperty -name Letter -value $disk.DeviceID 
+    $drv | Add-Member -type NoteProperty -name DriveType -value $drvtype[$disk.DriveType]
+    $drv | Add-Member -type NoteProperty -name VolumeName -value $disk.VolumeName 
+    $drv | Add-Member -type NoteProperty -Name TotalMB -Value ($disk.size)
+    $drv | Add-Member -type NoteProperty -Name FreeMB -value ($disk.FreeSpace)
+    $drives += $drv
+  }
+  $drives | 
+  Format-Table -AutoSize -property Letter, DriveType, VolumeName, @{N="TotalMB";E={"{0:N0}" -f ($_.TotalMB/1MB)};a="right"}, @{N="FreeMB";E={"{0:N0}" -f ($_.FreeMB/1MB)};a="right"} |
+  Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
 } else {
   $proc = Get-Process | Where-Object {$_.Name -ne "Idle"}
   $proc | Format-Table -AutoSize -property id, name, @{N="WorkingSet";E={"{0:N0}" -f ($_.workingset/1kb)};a="right"},
@@ -665,4 +719,54 @@ if ($proc) {
   @{N="Proc time";E={($_.TotalProcessorTime.ToString().substring(0,8))}}, @{N="Threads";E={$_.threads.count}},
   @{N="Handles";E={($_.HandleCount)}}, StartTime, Path | 
   Out-String -Width 300 | Out-File -FilePath ($resDir + "\processes.txt")
+}
+
+# Diag start
+
+Write-Diag "[INFO] Retrieving machine's IP addresses"
+$iplist = Get-NetIPAddress
+
+Write-Diag "[INFO] Browsing listeners"
+$listeners = Get-ChildItem WSMan:\localhost\Listener
+foreach ($listener in $listeners) {
+  Write-Diag ("[INFO] Inspecting listener " + $listener.Name)
+  $prop = Get-ChildItem $listener.PSPath
+  foreach ($value in $prop) {
+    if ($value.Name -eq "CertificateThumbprint") {
+      if ($listener.keys[0].Contains("HTTPS")) {
+        Write-Diag "[INFO] Found HTTPS listener"
+        $listenerThumbprint = $value.Value
+        Write-Diag "[INFO] Found listener certificate $listenerThumbprint"
+        if ($listenerThumbprint) {
+          $aCert = $tbCert.Select("Thumbprint = '" + $listenerThumbprint + "' and Store = 'My'")
+          if ($aCert.Count -gt 0) {
+            Write-Diag ("[INFO] Listener certificate found, subject is " + $aCert.Subject)
+          }  else {
+            Write-Diag "[ERROR] The certificate specified in the listener $listenerThumbprint is not avalable in LocalMachine/My store"
+          }
+        }
+      }
+    }
+    if ($value.Name.Contains("ListeningOn")) {
+      $ip = ($value.value).ToString()
+      Write-Diag "[INFO] Listening on $ip"
+      if (($iplist | Where-Object {$_.IPAddress -eq $ip } | measure-object).Count -eq 0 ) {
+        Write-Diag "[ERROR] IP address $ip not found"
+      }
+    }
+  } 
+} 
+
+if (Test-Path -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventForwarding\SubscriptionManager") {
+  $RegKey = (Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventForwarding\SubscriptionManager')
+
+  $RegKey.PSObject.Properties | ForEach-Object {
+    If($_.Name -notlike '*PS*'){
+      $IssuerCA = (FindSep -FindIn $_.Value -Left "IssuerCA=" -Right "")
+      $cert = Get-ChildItem ("Cert:\LocalMachine\CA\" + $IssuerCA)
+      Write-Diag $_.Name ' = ' $_.Value $IssuerCA $cert.Subject
+    } 
+  }
+} else {
+  Write-Diag "[INFO] No SubscriptionManager URL configured"
 }
