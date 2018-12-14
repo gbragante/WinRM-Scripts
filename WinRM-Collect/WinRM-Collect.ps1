@@ -1,4 +1,4 @@
-$version = "WinRm-Collect (20181212)"
+$version = "WinRm-Collect (20181214)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -128,12 +128,18 @@ Function GetStore($store) {
   $certlist = Get-ChildItem ("Cert:\LocalMachine\" + $store)
 
   foreach ($cert in $certlist) {
+    $EKU = ""
+    foreach ($item in $cert.EnhancedKeyUsageList) {
+      $EKU += $item.FriendlyName + " / "
+    }
+    if ($EKU) {$EKU = $eku.Substring(0, $eku.Length-3)} 
     $row = $tbcert.NewRow()
     $row.Store = $store
-    $row.Thumbprint = $cert.Thumbprint
+    $row.Thumbprint = $cert.Thumbprint.ToLower()
     $row.Subject = $cert.Subject
     $row.Issuer = $cert.Issuer
     $row.NotAfter = $cert.NotAfter
+    $row.EnhancedKeyUsage = $EKU
     $tbcert.Rows.Add($row)
   } 
 }
@@ -590,8 +596,6 @@ Write-Log $cmd
 Invoke-Expression $cmd
 " " | Out-File ($resDir + "\SPN.txt") -Append
 
-
-
 Write-Log "Collecting certificates details"
 $cmd = "Certutil -verifystore -v MY > """ + $resDir + "\Certificates-My.txt""" + $RdrErr
 Write-Log $cmd
@@ -613,6 +617,7 @@ $col = New-Object system.Data.DataColumn Subject,([string]); $tbCert.Columns.Add
 $col = New-Object system.Data.DataColumn Issuer,([string]); $tbCert.Columns.Add($col)
 $col = New-Object system.Data.DataColumn NotAfter,([DateTime]); $tbCert.Columns.Add($col)
 $col = New-Object system.Data.DataColumn IssuerThumbprint,([string]); $tbCert.Columns.Add($col)
+$col = New-Object system.Data.DataColumn EnhancedKeyUsage,([string]); $tbCert.Columns.Add($col)
 
 GetStore "My"
 GetStore "CA"
@@ -723,8 +728,10 @@ if ($proc) {
 
 # Diag start
 
-Write-Diag "[INFO] Retrieving machine's IP addresses"
-$iplist = Get-NetIPAddress
+if ($PSVersionTable.psversion.ToString() -ge "3.0") {
+  Write-Diag "[INFO] Retrieving machine's IP addresses"
+  $iplist = Get-NetIPAddress
+}
 
 Write-Diag "[INFO] Browsing listeners"
 $listeners = Get-ChildItem WSMan:\localhost\Listener
@@ -735,7 +742,7 @@ foreach ($listener in $listeners) {
     if ($value.Name -eq "CertificateThumbprint") {
       if ($listener.keys[0].Contains("HTTPS")) {
         Write-Diag "[INFO] Found HTTPS listener"
-        $listenerThumbprint = $value.Value
+        $listenerThumbprint = $value.Value.ToLower()
         Write-Diag "[INFO] Found listener certificate $listenerThumbprint"
         if ($listenerThumbprint) {
           $aCert = $tbCert.Select("Thumbprint = '" + $listenerThumbprint + "' and Store = 'My'")
@@ -750,8 +757,10 @@ foreach ($listener in $listeners) {
     if ($value.Name.Contains("ListeningOn")) {
       $ip = ($value.value).ToString()
       Write-Diag "[INFO] Listening on $ip"
-      if (($iplist | Where-Object {$_.IPAddress -eq $ip } | measure-object).Count -eq 0 ) {
-        Write-Diag "[ERROR] IP address $ip not found"
+      if ($PSVersionTable.psversion.ToString() -ge "3.0") {
+        if (($iplist | Where-Object {$_.IPAddress -eq $ip } | measure-object).Count -eq 0 ) {
+          Write-Diag "[ERROR] IP address $ip not found"
+        }
       }
     }
   } 
@@ -760,13 +769,83 @@ foreach ($listener in $listeners) {
 if (Test-Path -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventForwarding\SubscriptionManager") {
   $RegKey = (Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventForwarding\SubscriptionManager')
 
+  Write-Diag "[INFO] Enumerating SubscriptionManager URLs at HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventForwarding\SubscriptionManager"
   $RegKey.PSObject.Properties | ForEach-Object {
     If($_.Name -notlike '*PS*'){
-      $IssuerCA = (FindSep -FindIn $_.Value -Left "IssuerCA=" -Right "")
-      $cert = Get-ChildItem ("Cert:\LocalMachine\CA\" + $IssuerCA)
-      Write-Diag $_.Name ' = ' $_.Value $IssuerCA $cert.Subject
+      Write-Diag ("[INFO] " + $_.Name + " " + $_.Value)
+      $IssuerCA = (FindSep -FindIn $_.Value -Left "IssuerCA=" -Right ",").ToLower()
+      if (-not $IssuerCA) {
+        $IssuerCA = (FindSep -FindIn $_.Value -Left "IssuerCA=" -Right "").ToLower()
+      }
+      if ($IssuerCA) {
+        if ("0123456789abcdef".Contains($IssuerCA[0])) {
+          Write-Diag ("[INFO] Found issuer CA certificate thumbprint " + $IssuerCA)
+          $aCert = $tbCert.Select("Thumbprint = '" + $IssuerCA + "' and (Store = 'CA' or Store = 'Root')")
+          if ($aCert.Count -eq 0) {
+            Write-Diag "[ERROR] The Issuer CA certificate was not found in CA or Root stores"
+          } else {
+            Write-Diag ("[INFO] Found Issuer CA certificate, subject = " + $aCert[0].Subject)
+            if (($aCert[0].NotAfter) -gt (Get-Date)) {
+              Write-Diag ("[INFO] The Issuer CA certificate will expire on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
+            } else {
+              Write-Diag ("[ERROR] The Issuer CA certificate expired on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
+            }
+          }
+
+          $aCliCert = $tbCert.Select("IssuerThumbprint = '" + $IssuerCA + "' and Store = 'My'")
+          if ($aCliCert.Count -eq 0) {
+            Write-Diag "[ERROR] Cannot find any certificate issued by this Issuer CA"
+          } else {
+            if ($PSVersionTable.psversion.ToString() -ge "3.0") {
+              Write-Diag "[INFO] Listing available client certificates from this IssuerCA"
+              $num = 0
+              foreach ($cert in $aCliCert) {
+                if ($cert.EnhancedKeyUsage.Contains("Client Authentication")) {
+                  Write-Diag ("[INFO] Found client certificate " + $cert.Thumbprint + " " + $cert.Subject)
+                  if (($Cert.NotAfter) -gt (Get-Date)) {
+                    Write-Diag ("[INFO] The client certificate will expire on " + $cert.NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
+                  } else {
+                    Write-Diag ("[ERROR] The client certificate expired on " + $cert.NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
+                  }
+                 $num++
+                }
+              }
+              if ($num -eq 0) {
+                Write-Diag "[ERROR] Cannot find any client certificate issued by this Issuer CA"
+              }
+            }
+          }
+        } else {
+         Write-Diag "[ERROR] Invalid character for the IssuerCA certificate in the SubscriptionManager URL"
+        }
+      }
     } 
   }
 } else {
-  Write-Diag "[INFO] No SubscriptionManager URL configured"
+  Write-Diag "[INFO] No SubscriptionManager URL configured. It's ok if this machine is not supposed to forward events."
+}
+
+if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
+  $search = New-Object DirectoryServices.DirectorySearcher([ADSI]"")
+  Write-Diag ("[INFO] Searching for the SPN HTTP/$env:COMPUTERNAME")
+  $search.filter = "(servicePrincipalName=HTTP/$env:COMPUTERNAME)"
+  $results = $search.Findall()
+  if ($results.count -gt 0) {
+    foreach ($result in $results) {
+      Write-Diag ("[INFO] The SPN HTTP/$env:COMPUTERNAME is registered for DNS name = " + $result.properties.dnshostname + ", DN = " + $result.properties.distinguishedname + ", Category = " + $result.properties.objectcategory)
+      if (-not $result.properties.objectcategory[0].Contains("Computer")) {
+        Write-Diag "[WARNING] The The SPN HTTP/$env:COMPUTERNAME is NOT registered for a computer account"
+      }
+      if (-not $result.properties.dnshostname[0].Contains($env:COMPUTERNAME)) {
+        Write-Diag "[ERROR] The The SPN HTTP/$env:COMPUTERNAME is registered for different computer account"
+      }
+    }
+    if ($results.count -gt 1) {
+      Write-Diag "[ERROR] The The SPN HTTP/$env:COMPUTERNAME is duplicate"
+    }
+  } else {
+    Write-Diag "[INFO] The The SPN HTTP/$env:COMPUTERNAME was not found. That's ok, the SPN HOST/$env:COMPUTERNAME will be used"
+  }
+} else {
+  Write-Diag "[INFO] The machine is not joined to a domain"
 }
