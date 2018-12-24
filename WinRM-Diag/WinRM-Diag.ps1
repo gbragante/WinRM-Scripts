@@ -1,4 +1,5 @@
-# WinRM-Diag 20181214 - by Gianni Bragante gbrag@microsoft.com
+$DiagVersion = "WinRM-Diag (20181224)"
+# by Gianni Bragante gbrag@microsoft.com
 
 Function FindSep {
   param( [string]$FindIn, [string]$Left,[string]$Right )
@@ -68,6 +69,7 @@ $col = New-Object system.Data.DataColumn NotAfter,([DateTime]); $tbCert.Columns.
 $col = New-Object system.Data.DataColumn IssuerThumbprint,([string]); $tbCert.Columns.Add($col)
 $col = New-Object system.Data.DataColumn EnhancedKeyUsage,([string]); $tbCert.Columns.Add($col)
 
+Write-Diag ("[INFO] " + $DiagVersion)
 Write-Diag "[INFO] Retrieving certificates from LocalMachine\My store"
 GetStore "My"
 Write-Diag "[INFO] Retrieving certificates from LocalMachine\CA store"
@@ -208,4 +210,11 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
   }
 } else {
   Write-Diag "[INFO] The machine is not joined to a domain"
+}
+
+$iplisten = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters" | Select-Object -ExpandProperty "ListenOnlyList" -ErrorAction SilentlyContinue)
+if ($iplisten) {
+  Write-Diag ("[WARNING] The IPLISTEN list is not empty, the listed addresses are " + $iplisten)
+} else {
+  Write-Diag "[INFO] The IPLISTEN list is empty. That's ok: WinRM will listen on all IP addresses"
 }

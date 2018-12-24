@@ -1,4 +1,6 @@
-$version = "WinRm-Collect (20181214)"
+$version = "WinRm-Collect (20181224)"
+$DiagVersion = "WinRM-Diag (20181224)"
+
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -848,4 +850,11 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
   }
 } else {
   Write-Diag "[INFO] The machine is not joined to a domain"
+}
+
+$iplisten = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters" | Select-Object -ExpandProperty "ListenOnlyList" -ErrorAction SilentlyContinue)
+if ($iplisten) {
+  Write-Diag ("[WARNING] The IPLISTEN list is not empty, the listed addresses are " + $iplisten)
+} else {
+  Write-Diag "[INFO] The IPLISTEN list is empty. That's ok: WinRM will listen on all IP addresses"
 }
