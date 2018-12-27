@@ -1,4 +1,4 @@
-$DiagVersion = "WinRM-Diag (20181224)"
+$DiagVersion = "WinRM-Diag (20181227)"
 # by Gianni Bragante gbrag@microsoft.com
 
 Function FindSep {
@@ -109,7 +109,12 @@ foreach ($listener in $listeners) {
         if ($listenerThumbprint) {
           $aCert = $tbCert.Select("Thumbprint = '" + $listenerThumbprint + "' and Store = 'My'")
           if ($aCert.Count -gt 0) {
-            Write-Diag ("[INFO] Listener certificate found, subject is " + $aCert.Subject)
+            Write-Diag ("[INFO] Listener certificate found, subject is " + $aCert[0].Subject)
+            if (($aCert[0].NotAfter) -gt (Get-Date)) {
+              Write-Diag ("[INFO] The listener certificate will expire on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
+            } else {
+              Write-Diag ("[ERROR] The listener certificate expired on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
+            }
           }  else {
             Write-Diag "[ERROR] The certificate specified in the listener $listenerThumbprint is not avalable in LocalMachine/My store"
           }
