@@ -50,6 +50,18 @@ $col = New-Object system.Data.DataColumn MessageID,([string]); $tbEvt.Columns.Ad
 $col = New-Object system.Data.DataColumn RelatesTo,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn FileName,([string]); $tbEvt.Columns.Add($col)
 
+$tbCAPI = New-Object system.Data.DataTable
+$col = New-Object system.Data.DataColumn Time,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Operation,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn ProcessName,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Result,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Subject,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn FileRef,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn URL,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn TaskID,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Seq,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn FileName,([string]); $tbCAPI.Columns.Add($col)
+
 $dtStart = Get-Date
 
 $sr = new-object System.io.streamreader(get-item $InputFile)
@@ -62,25 +74,25 @@ while (-not $sr.EndOfStream) {
     $thread = $thread.Substring($npos + 1, $thread.IndexOf("::") - $npos -1)
     if ($line -match  "client sending index") { 
         $msgtype = "CS"
+    } else {
+      if ($line -match  "client receiving index") { 
+        $msgtype = "CR" 
       } else {
         if ($line -match  "client receiving index") { 
           $msgtype = "CR" 
         } else {
-          if ($line -match  "client receiving index") { 
-            $msgtype = "CR" 
+          if ($line -match  "listener receiving index") { 
+            $msgtype = "LR" 
           } else {
-            if ($line -match  "listener receiving index") { 
-              $msgtype = "LR" 
-            } else {
-              if ($line -match  "listener sending index") { 
-                $msgtype = "LS" 
-              } else { 
-                $msgtype = "NA" 
-              }
+            if ($line -match  "listener sending index") { 
+              $msgtype = "LS" 
+            } else { 
+              $msgtype = "NA" 
             }
           }
         }
       }
+    }
 
     $nPos = $line.IndexOf("bytes)] ")
     $xmlPart = $line.Substring($nPos+8, $line.Length - $nPos - 8)
@@ -186,121 +198,166 @@ while (-not $sr.EndOfStream) {
           }
         } elseif ($xmlEvt.Envelope.body.EnumerateResponse.Items.FirstChild.Name -eq "w:Item") {
           $row.Items = $xmlEvt.Envelope.body.EnumerateResponse.Items.ChildNodes.Count
-        }
-      } elseif ($row.Message -eq "CommandLine") {
-        $row.Command = $xmlEvt.Envelope.body.CommandLine.Command
-      } elseif ($xmlEvt.Envelope.Header.ResourceURI.'#text') {
-        if ($xmlEvt.Envelope.Header.ResourceURI.'#text'.IndexOf("cim-schema") -gt 0) {
-          $cmdWMI = ""
-          foreach ($sel in $xmlEvt.Envelope.Header.SelectorSet.Selector) {
-            $cmdWMI = $cmdWMI + $sel.'#text' + " "
-          }
-          $row.Command = $cmdWMI
-        }
       }
+    } elseif ($row.Message -eq "CommandLine") {
+      $row.Command = $xmlEvt.Envelope.body.CommandLine.Command
+    } elseif ($xmlEvt.Envelope.Header.ResourceURI.'#text') {
+      if ($xmlEvt.Envelope.Header.ResourceURI.'#text'.IndexOf("cim-schema") -gt 0) {
+        $cmdWMI = ""
+        foreach ($sel in $xmlEvt.Envelope.Header.SelectorSet.Selector) {
+          $cmdWMI = $cmdWMI + $sel.'#text' + " "
+        }
+        $row.Command = $cmdWMI
+      }
+    }
     
-      if ($xmlEvt.Envelope.Header.Action.HasAttributes) {
-        $row.Action = $xmlEvt.Envelope.Header.Action.'#text'
-      } else {
-        $row.Action = $xmlEvt.Envelope.Header.Action
-      }
+    if ($xmlEvt.Envelope.Header.Action.HasAttributes) {
+      $row.Action = $xmlEvt.Envelope.Header.Action.'#text'
+    } else {
+      $row.Action = $xmlEvt.Envelope.Header.Action
+    }
 
-      if ($xmlEvt.Envelope.Header.RelatesTo.HasAttributes) {
-        $relTo = ($xmlEvt.Envelope.Header.RelatesTo.'#text').substring(5)
-      } else {
-        $relTo = $xmlEvt.Envelope.Header.RelatesTo
-        if ($relTo) {
-          $relTo = $relTo.substring(5)
-        }
-      }
-      
-      if ($xmlEvt.Envelope.Header.OperationID.HasAttributes) {
-        $OpId = ($xmlEvt.Envelope.Header.OperationID.'#text').substring(5)
-      } else {
-        $OpId = $xmlEvt.Envelope.Header.OperationID
-        if ($OpId) {
-          $OpId = $OpId.substring(5)
-        }
-      }
-      if ($xmlEvt.Envelope.Header.SessionID) {
-        if ($xmlEvt.Envelope.Header.SessionID.HasAttributes) {
-          $SessID = ($xmlEvt.Envelope.Header.SessionID.'#text').substring(5)
-        } else {
-          $SessID = ($xmlEvt.Envelope.Header.SessionID).substring(5)
-        }
-      } else {
-        $SessID = ""
-      }
-
-      $ShlID = ""
-      if ($xmlEvt.Envelope.Header.SelectorSet.Selector.Name) {
-        if ($xmlEvt.Envelope.Header.SelectorSet.Selector.Name -eq "ShellID") {
-          $ShlID = $xmlEvt.Envelope.Header.SelectorSet.Selector.'#text'
-        }
-      } elseif ($xmlEvt.Envelope.Body.Shell.ShellId) {
-        $ShlID = $xmlEvt.Envelope.Body.Shell.ShellId
-      }
-
-      $cmdID = ""
-      if ($ShlID) {
-        if ($xmlEvt.Envelope.Body.Receive.DesiredStream.CommandId) {
-          $cmdID = $xmlEvt.Envelope.Body.Receive.DesiredStream.CommandId
-        } elseif ($xmlEvt.Envelope.Body.CommandLine.CommandId) {
-          $cmdID = $xmlEvt.Envelope.Body.CommandLine.CommandId
-        } elseif ($xmlEvt.Envelope.Body.Signal.CommandId) {
-          $cmdID = $xmlEvt.Envelope.Body.Signal.CommandId
-          $row.Command = ($xmlEvt.Envelope.Body.Signal.Code).Replace("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/signal/","")
-        }
-      }
-
-      if ($xmlEvt.Envelope.Header.ActivityID) {
-        if ($xmlEvt.Envelope.Header.ActivityID.HasAttributes) {
-          $ActID = ($xmlEvt.Envelope.Header.ActivityID.'#text').substring(5)
-        } else {
-          $ActID = ($xmlEvt.Envelope.Header.ActivityID).substring(5)
-        }
-      } else {
-        $ActID = ""
-      }
-
-      $To = $xmlEvt.Envelope.Header.To
-
+    if ($xmlEvt.Envelope.Header.RelatesTo.HasAttributes) {
+      $relTo = ($xmlEvt.Envelope.Header.RelatesTo.'#text').substring(5)
+    } else {
+      $relTo = $xmlEvt.Envelope.Header.RelatesTo
       if ($relTo) {
-        $aRel = $tbEvt.Select("MessageID = '" + $relTo + "'")
-        $To = $aRel[0].To
-        $SessID = $aRel[0].SessionID
-        $ShlID = $aRel[0].ShellID
-        $cmdID = $aRel[0].CommandID
-        $ActID = $aRel[0].ActivityID
-        $OpId = $aRel[0].OperationID
-        $computer = $aRel[0].Computer
+        $relTo = $relTo.substring(5)
       }
-
-      $row.To = $To
-      $row.Computer = $computer
-      $row.MessageID = $msgId
-      $row.RelatesTo = $relTo
-      $row.SessionID = $SessId
-      $row.ShellID = $ShlID
-      $row.CommandID = $cmdID
-      $row.ActivityID = $ActId
-      $row.OperationID = $OpId
-      $row.OperationTimeout = $xmlEvt.Envelope.Header.OperationTimeout
-      $row.FileName = $FileName
-
-      $tbEvt.Rows.Add($row)
-      Write-Host $lines $thread $time $To $row.Action
-
+    }
+      
+    if ($xmlEvt.Envelope.Header.OperationID.HasAttributes) {
+      $OpId = ($xmlEvt.Envelope.Header.OperationID.'#text').substring(5)
+    } else {
+      $OpId = $xmlEvt.Envelope.Header.OperationID
+      if ($OpId) {
+        $OpId = $OpId.substring(5)
+      }
+    }
+    if ($xmlEvt.Envelope.Header.SessionID) {
+      if ($xmlEvt.Envelope.Header.SessionID.HasAttributes) {
+        $SessID = ($xmlEvt.Envelope.Header.SessionID.'#text').substring(5)
+      } else {
+        $SessID = ($xmlEvt.Envelope.Header.SessionID).substring(5)
       }
     } else {
-      $line = $sr.ReadLine()
-      $lines = $lines + 1
+      $SessID = ""
     }
+
+    $ShlID = ""
+    if ($xmlEvt.Envelope.Header.SelectorSet.Selector.Name) {
+      if ($xmlEvt.Envelope.Header.SelectorSet.Selector.Name -eq "ShellID") {
+        $ShlID = $xmlEvt.Envelope.Header.SelectorSet.Selector.'#text'
+      }
+    } elseif ($xmlEvt.Envelope.Body.Shell.ShellId) {
+      $ShlID = $xmlEvt.Envelope.Body.Shell.ShellId
+    }
+
+    $cmdID = ""
+    if ($ShlID) {
+      if ($xmlEvt.Envelope.Body.Receive.DesiredStream.CommandId) {
+        $cmdID = $xmlEvt.Envelope.Body.Receive.DesiredStream.CommandId
+      } elseif ($xmlEvt.Envelope.Body.CommandLine.CommandId) {
+        $cmdID = $xmlEvt.Envelope.Body.CommandLine.CommandId
+      } elseif ($xmlEvt.Envelope.Body.Signal.CommandId) {
+        $cmdID = $xmlEvt.Envelope.Body.Signal.CommandId
+        $row.Command = ($xmlEvt.Envelope.Body.Signal.Code).Replace("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/signal/","")
+      }
+    }
+
+    if ($xmlEvt.Envelope.Header.ActivityID) {
+      if ($xmlEvt.Envelope.Header.ActivityID.HasAttributes) {
+        $ActID = ($xmlEvt.Envelope.Header.ActivityID.'#text').substring(5)
+      } else {
+        $ActID = ($xmlEvt.Envelope.Header.ActivityID).substring(5)
+      }
+    } else {
+      $ActID = ""
+    }
+
+    $To = $xmlEvt.Envelope.Header.To
+
+    if ($relTo) {
+      $aRel = $tbEvt.Select("MessageID = '" + $relTo + "'")
+      $To = $aRel[0].To
+      $SessID = $aRel[0].SessionID
+      $ShlID = $aRel[0].ShellID
+      $cmdID = $aRel[0].CommandID
+      $ActID = $aRel[0].ActivityID
+      $OpId = $aRel[0].OperationID
+      $computer = $aRel[0].Computer
+    }
+
+    $row.To = $To
+    $row.Computer = $computer
+    $row.MessageID = $msgId
+    $row.RelatesTo = $relTo
+    $row.SessionID = $SessId
+    $row.ShellID = $ShlID
+    $row.CommandID = $cmdID
+    $row.ActivityID = $ActId
+    $row.OperationID = $OpId
+    $row.OperationTimeout = $xmlEvt.Envelope.Header.OperationTimeout
+    $row.FileName = $FileName
+
+    $tbEvt.Rows.Add($row)
+    Write-Host $lines $thread $time $To $row.Action
+
+    }
+  } elseif ($line -match  "Microsoft-Windows-CAPI2/Operational") {
+    $npos=$line.IndexOf("::")
+    $time = ($line.Substring($nPos + 2 , 25))
+    $timeFile = $time.Substring(9).Replace(":","").Replace(".","-")
+    $xmlLineCAPI = $line.Substring($line.indexof("<"))
+    $filename = "out-" + $timeFile + "-CAPI.xml"
+    $xmlLineCAPI | Out-File -FilePath ($dirName + "\" + $FileName) 
+
+    $xmlCAPI = New-Object -TypeName System.Xml.XmlDocument
+    $xmlCAPI.LoadXml($xmlLineCAPI) 
+
+    $rowCAPI = $tbCAPI.NewRow()
+    $rowCAPI.Time = $time
+    $rowCAPI.Operation = $xmlLineCAPI.Substring(1,$xmlLineCAPI.IndexOf(">")-1)
+    $rowCAPI.ProcessName = $xmlCAPI.FirstChild.EventAuxInfo.ProcessName
+    $rowCAPI.TaskID = $xmlCAPI.FirstChild.CorrelationAuxInfo.TaskId
+    $rowCAPI.Seq = $xmlCAPI.FirstChild.CorrelationAuxInfo.SeqNumber
+    $rowCAPI.FileName = $filename
+
+    if ($xmlCAPI.FirstChild.Certificate) {
+      if ($xmlCAPI.FirstChild.Certificate.Count -gt 1) {
+        $rowCAPI.Subject = $xmlCAPI.FirstChild.Certificate[0].subjectName
+        $rowCAPI.FileRef = $xmlCAPI.FirstChild.Certificate[0].fileRef
+      } else {
+        $rowCAPI.Subject = $xmlCAPI.FirstChild.Certificate.subjectName
+        $rowCAPI.FileRef = $xmlCAPI.FirstChild.Certificate.fileRef
+      }
+    }
+
+    if ($xmlCAPI.FirstChild.URL) {
+      $rowCAPI.URL = $xmlCAPI.FirstChild.URL.'#text'
+    }
+
+    if ($xmlCAPI.FirstChild.Result) {
+      $rowCAPI.Result = $xmlCAPI.FirstChild.Result.value
+    }
+    $tbCAPI.Rows.Add($rowCAPI)
+
+    if ($filename -eq "out-163547-1381473-CAPI.xml") {
+      Write-Host ""
+    }
+
+    $line = $sr.ReadLine()
+    $lines = $lines + 1
+  } else {
+    $line = $sr.ReadLine()
+    $lines = $lines + 1
   }
+}
 
 $sr.Close()
 
 $tbEvt | Export-Csv ($dirName + "\events-" + (Get-Item $InputFile).BaseName +".tsv") -noType -Delimiter "`t"
+$tbCAPI | Export-Csv ($dirName + "\CAPI-" + (Get-Item $InputFile).BaseName +".tsv") -noType -Delimiter "`t"
 
 $duration = New-TimeSpan -Start $dtStart -End (Get-Date)
 Write-Host "Execution completed in" $duration
