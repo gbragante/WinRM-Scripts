@@ -1,4 +1,4 @@
-$DiagVersion = "WinRM-Diag (20181227)"
+$DiagVersion = "WinRM-Diag (20181231)"
 # by Gianni Bragante gbrag@microsoft.com
 
 Function FindSep {
@@ -90,7 +90,9 @@ $tbcert | Export-Csv ($resDir + "\certificates.tsv") -noType -Delimiter "`t"
 
 # Diag start
 
-if ($PSVersionTable.psversion.ToString() -ge "3.0") {
+$OSVer = [environment]::OSVersion.Version.Major + [environment]::OSVersion.Version.Minor * 0.1
+
+if ($OSVer -gt 6.1) {
   Write-Diag "[INFO] Retrieving machine's IP addresses"
   $iplist = Get-NetIPAddress
 }
@@ -124,7 +126,7 @@ foreach ($listener in $listeners) {
     if ($value.Name.Contains("ListeningOn")) {
       $ip = ($value.value).ToString()
       Write-Diag "[INFO] Listening on $ip"
-      if ($PSVersionTable.psversion.ToString() -ge "3.0") {
+      if ($OSVer -gt 6.1) {
         if (($iplist | Where-Object {$_.IPAddress -eq $ip } | measure-object).Count -eq 0 ) {
           Write-Diag "[ERROR] IP address $ip not found"
         }
@@ -132,6 +134,28 @@ foreach ($listener in $listeners) {
     }
   } 
 } 
+
+$ipfilter = Get-Item WSMan:\localhost\Service\IPv4Filter
+if ($ipfilter.Value) {
+  if ($ipfilter.Value -eq "*") {
+    Write-Diag "[INFO] IPv4Filter = *"
+  } else {
+    Write-Diag ("[WARNING] IPv4Filter = " + $ipfilter.Value)
+  }
+} else {
+  Write-Diag ("[WARNING] IPv4Filter is empty, WinRM will not listen on IPv4")
+}
+
+$ipfilter = Get-Item WSMan:\localhost\Service\IPv6Filter
+if ($ipfilter.Value) {
+  if ($ipfilter.Value -eq "*") {
+    Write-Diag "[INFO] IPv6Filter = *"
+  } else {
+    Write-Diag ("[WARNING] IPv6Filter = " + $ipfilter.Value)
+  }
+} else {
+  Write-Diag ("[WARNING] IPv6Filter is empty, WinRM will not listen on IPv6")
+}
 
 if (Test-Path -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventForwarding\SubscriptionManager") {
   $RegKey = (Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventForwarding\SubscriptionManager')
@@ -222,4 +246,77 @@ if ($iplisten) {
   Write-Diag ("[WARNING] The IPLISTEN list is not empty, the listed addresses are " + $iplisten)
 } else {
   Write-Diag "[INFO] The IPLISTEN list is empty. That's ok: WinRM will listen on all IP addresses"
+}
+
+$binval = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\Connections" -Name WinHttpSettings).WinHttPSettings            
+$proxylength = $binval[12]            
+if ($proxylength -gt 0) {
+  $proxy = -join ($binval[(12+3+1)..(12+3+1+$proxylength-1)] | % {([char]$_)})            
+  Write-Diag ("[WARNING] A NETSH WINHTTP proxy is configured: " + $proxy)
+  $bypasslength = $binval[(12+3+1+$proxylength)]            
+  if ($bypasslength -gt 0) {            
+    $bypasslist = -join ($binval[(12+3+1+$proxylength+3+1)..(12+3+1+$proxylength+3+1+$bypasslength)] | % {([char]$_)})            
+    Write-Diag ("[WARNING] Bypass list: " + $bypasslist)
+   } else {            
+    Write-Diag "[WARNING] No bypass list is configured"
+  }            
+  Write-Diag "[WARNING] WinRM does not work very well through proxies, make sure that the target machine is in the bypass list or remove the proxy"
+} else {
+  Write-Diag "[INFO] No NETSH WINHTTP proxy is configured"
+}
+
+$th = (get-item WSMan:\localhost\Client\TrustedHosts).value
+if ($th) {
+  Write-Diag ("[INFO] TrustedHosts contains: $th")
+} else {
+  Write-Diag ("[INFO] TrustedHosts is not configured")
+}
+
+$psver = $PSVersionTable.PSVersion.Major.ToString() + $PSVersionTable.PSVersion.Minor.ToString()
+if ($psver -eq "50") {
+  Write-Diag ("[WARNING] Windows Management Framework version " + $PSVersionTable.PSVersion.ToString() + " is no longer supported")
+} else { 
+  Write-Diag ("[INFO] Windows Management Framework version is " + $PSVersionTable.PSVersion.ToString() )
+}
+
+Write-Diag "[INFO] Client certificate mappings"
+$clientcert = Get-ChildItem WSMan:\localhost\ClientCertificate
+foreach ($certmap in $clientcert) {
+  Write-Diag ("[INFO] Certificate mapping " + $certmap.Name)
+  $prop = Get-ChildItem $certmap.PSPath
+  foreach ($value in $prop) {
+    Write-Diag ("[INFO]   " + $value.Name + " " + $value.Value)
+    if ($value.Name -eq "Issuer") {
+      if ("0123456789abcdef".Contains($value.Value[0])) {
+        $aCert = $tbCert.Select("Thumbprint = '" + $value.Value + "' and (Store = 'CA' or Store = 'Root')")
+        if ($aCert.Count -eq 0) {
+          Write-Diag "[ERROR]     The mapping certificate was not found in CA or Root stores"
+        } else {
+          Write-Diag ("[INFO]     Found mapping certificate, subject = " + $aCert[0].Subject)
+          if (($aCert[0].NotAfter) -gt (Get-Date)) {
+            Write-Diag ("[INFO]     The mapping certificate will expire on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
+          } else {
+            Write-Diag ("[ERROR]     The mapping certificate expired on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
+          }
+        }
+      } else {
+        Write-Diag "[ERROR] Invalid character in the certificate thumbprint"
+      }
+    } elseif ($value.Name -eq "UserName") {
+      $usr = Get-WmiObject -class Win32_UserAccount | Where {$_.Name -eq $value.value}
+      if ($usr) {
+        if ($usr.Disabled) {
+          Write-Diag ("[ERROR]    The local user account " + $value.value + " is disabled")
+        } else {
+          Write-Diag ("[INFO]     The local user account " + $value.value + " is enabled")
+        }
+      } else {
+        Write-Diag ("[ERROR]    The local user account " + $value.value + " does not exist")
+      }
+    } elseif ($value.Name -eq "Subject") {
+      if ($value.Value[0] -eq '"') {
+        Write-Diag "[ERROR]    The subject does not have to be included in double quotes"
+      }
+    }
+  }
 }
