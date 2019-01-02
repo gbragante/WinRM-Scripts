@@ -1,4 +1,4 @@
-$DiagVersion = "WinRM-Diag (20181231)"
+$DiagVersion = "WinRM-Diag (20190102)"
 # by Gianni Bragante gbrag@microsoft.com
 
 Function FindSep {
@@ -78,7 +78,7 @@ Write-Diag "[INFO] Retrieving certificates from LocalMachine\Root store"
 GetStore "Root"
 
 Write-Diag "[INFO] Matching issuer thumbprints"
-$aCert = $tbCert.Select("Store = 'My'")
+$aCert = $tbCert.Select("Store = 'My' or Store = 'CA'")
 foreach ($cert in $aCert) {
   $aIssuer = $tbCert.Select("Subject = '" + ($cert.Issuer).tostring() + "'")
   if ($aIssuer.Count -gt 0) {
@@ -175,7 +175,7 @@ if (Test-Path -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventFor
           if ($aCert.Count -eq 0) {
             Write-Diag "[ERROR] The Issuer CA certificate was not found in CA or Root stores"
           } else {
-            Write-Diag ("[INFO] Found Issuer CA certificate, subject = " + $aCert[0].Subject)
+            Write-Diag ("[INFO] Issuer CA certificate found in store " + $aCert[0].Store + ", subject = " + $aCert[0].Subject)
             if (($aCert[0].NotAfter) -gt (Get-Date)) {
               Write-Diag ("[INFO] The Issuer CA certificate will expire on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
             } else {
@@ -192,17 +192,19 @@ if (Test-Path -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventFor
               $num = 0
               foreach ($cert in $aCliCert) {
                 if ($cert.EnhancedKeyUsage.Contains("Client Authentication")) {
-                  Write-Diag ("[INFO] Found client certificate " + $cert.Thumbprint + " " + $cert.Subject)
+                  Write-Diag ("[INFO]   Found client certificate " + $cert.Thumbprint + " " + $cert.Subject)
                   if (($Cert.NotAfter) -gt (Get-Date)) {
-                    Write-Diag ("[INFO] The client certificate will expire on " + $cert.NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
+                    Write-Diag ("[INFO]   The client certificate will expire on " + $cert.NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
                   } else {
-                    Write-Diag ("[ERROR] The client certificate expired on " + $cert.NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
+                    Write-Diag ("[ERROR]   The client certificate expired on " + $cert.NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
                   }
                  $num++
                 }
               }
               if ($num -eq 0) {
                 Write-Diag "[ERROR] Cannot find any client certificate issued by this Issuer CA"
+              } elseif ($num -gt 1) {
+                Write-Diag "[WARNING] More than one client certificate issued by this Issuer CA, the first certificate will be used by WinRM"
               }
             }
           }
@@ -279,44 +281,56 @@ if ($psver -eq "50") {
   Write-Diag ("[INFO] Windows Management Framework version is " + $PSVersionTable.PSVersion.ToString() )
 }
 
-Write-Diag "[INFO] Client certificate mappings"
 $clientcert = Get-ChildItem WSMan:\localhost\ClientCertificate
-foreach ($certmap in $clientcert) {
-  Write-Diag ("[INFO] Certificate mapping " + $certmap.Name)
-  $prop = Get-ChildItem $certmap.PSPath
-  foreach ($value in $prop) {
-    Write-Diag ("[INFO]   " + $value.Name + " " + $value.Value)
-    if ($value.Name -eq "Issuer") {
-      if ("0123456789abcdef".Contains($value.Value[0])) {
-        $aCert = $tbCert.Select("Thumbprint = '" + $value.Value + "' and (Store = 'CA' or Store = 'Root')")
-        if ($aCert.Count -eq 0) {
-          Write-Diag "[ERROR]     The mapping certificate was not found in CA or Root stores"
-        } else {
-          Write-Diag ("[INFO]     Found mapping certificate, subject = " + $aCert[0].Subject)
-          if (($aCert[0].NotAfter) -gt (Get-Date)) {
-            Write-Diag ("[INFO]     The mapping certificate will expire on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
+if ($clientcert.Count -gt 0) {
+  Write-Diag "[INFO] Client certificate mappings"
+  foreach ($certmap in $clientcert) {
+    Write-Diag ("[INFO] Certificate mapping " + $certmap.Name)
+    $prop = Get-ChildItem $certmap.PSPath
+    foreach ($value in $prop) {
+      Write-Diag ("[INFO]   " + $value.Name + " " + $value.Value)
+      if ($value.Name -eq "Issuer") {
+        if ("0123456789abcdef".Contains($value.Value[0])) {
+          $aCert = $tbCert.Select("Thumbprint = '" + $value.Value + "' and (Store = 'CA' or Store = 'Root')")
+          if ($aCert.Count -eq 0) {
+            Write-Diag "[ERROR]     The mapping certificate was not found in CA or Root stores"
           } else {
-            Write-Diag ("[ERROR]     The mapping certificate expired on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
+            Write-Diag ("[INFO]     Found mapping certificate, subject = " + $aCert[0].Subject)
+            if (($aCert[0].NotAfter) -gt (Get-Date)) {
+              Write-Diag ("[INFO]     The mapping certificate will expire on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
+            } else {
+              Write-Diag ("[ERROR]     The mapping certificate expired on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
+            }
           }
-        }
-      } else {
-        Write-Diag "[ERROR] Invalid character in the certificate thumbprint"
-      }
-    } elseif ($value.Name -eq "UserName") {
-      $usr = Get-WmiObject -class Win32_UserAccount | Where {$_.Name -eq $value.value}
-      if ($usr) {
-        if ($usr.Disabled) {
-          Write-Diag ("[ERROR]    The local user account " + $value.value + " is disabled")
         } else {
-          Write-Diag ("[INFO]     The local user account " + $value.value + " is enabled")
+          Write-Diag "[ERROR] Invalid character in the certificate thumbprint"
         }
-      } else {
-        Write-Diag ("[ERROR]    The local user account " + $value.value + " does not exist")
-      }
-    } elseif ($value.Name -eq "Subject") {
-      if ($value.Value[0] -eq '"') {
-        Write-Diag "[ERROR]    The subject does not have to be included in double quotes"
+      } elseif ($value.Name -eq "UserName") {
+        $usr = Get-WmiObject -class Win32_UserAccount | Where {$_.Name -eq $value.value}
+        if ($usr) {
+          if ($usr.Disabled) {
+            Write-Diag ("[ERROR]    The local user account " + $value.value + " is disabled")
+          } else {
+            Write-Diag ("[INFO]     The local user account " + $value.value + " is enabled")
+          }
+        } else {
+          Write-Diag ("[ERROR]    The local user account " + $value.value + " does not exist")
+        }
+      } elseif ($value.Name -eq "Subject") {
+        if ($value.Value[0] -eq '"') {
+          Write-Diag "[ERROR]    The subject does not have to be included in double quotes"
+        }
       }
     }
+  }
+} else {
+  Write-Diag "[INFO] No client certificate mapping configured, that's ok if this machine is not supposed to accept certificate authentication clients"
+}
+
+$aCert = $tbCert.Select("Store = 'Root' and Subject <> Issuer")
+if ($aCert.Count -gt 0) {
+  Write-Diag "[ERROR] Found for non-Root certificates in the Root store"
+  foreach ($cert in $acert) {
+    Write-Diag ("[ERROR]  Misplaced certificate " + $cert.Subject)
   }
 }
