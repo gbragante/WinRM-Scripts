@@ -1,5 +1,5 @@
-$version = "WinRm-Collect (20190102)"
-$DiagVersion = "WinRM-Diag (20190102)"
+$version = "WinRm-Collect (20190103)"
+$DiagVersion = "WinRM-Diag (20190103)"
 
 # by Gianni Bragante - gbrag@microsoft.com
 
@@ -732,6 +732,7 @@ if ($proc) {
 Write-Diag ("[INFO] " + $DiagVersion)
 
 # Diag start
+
 $OSVer = [environment]::OSVersion.Version.Major + [environment]::OSVersion.Version.Minor * 0.1
 
 if ($OSVer -gt 6.1) {
@@ -800,6 +801,7 @@ if ($ipfilter.Value) {
 }
 
 if (Test-Path -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventForwarding\SubscriptionManager") {
+  $isForwarder = $True
   $RegKey = (Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventForwarding\SubscriptionManager')
 
   Write-Diag "[INFO] Enumerating SubscriptionManager URLs at HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventForwarding\SubscriptionManager"
@@ -840,7 +842,24 @@ if (Test-Path -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventFor
                   } else {
                     Write-Diag ("[ERROR]   The client certificate expired on " + $cert.NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
                   }
-                 $num++
+                  $certobj = Get-Item ("CERT:\Localmachine\My\" + $cert.Thumbprint)
+                  $keypath = [io.path]::combine("$env:ProgramData\microsoft\crypto\rsa\machinekeys", $certobj.privatekey.cspkeycontainerinfo.uniquekeycontainername)
+                  if ([io.file]::exists($keypath)) {
+                    $acl = ((get-acl -path $keypath).Access | Where-Object {$_.IdentityReference -eq "NT AUTHORITY\NETWORK SERVICE"})
+                    if ($acl) {
+                      $rights = $acl.FileSystemRights.ToString()
+                      if ($rights.contains("Read") -or $rights.contains("FullControl") ) {
+                        Write-Diag ("[INFO]   The NETWORK SERVICE account has permissions on the private key of this certificate: " + $rights)
+                      } else {
+                        Write-Diag ("[ERROR]  Incorrect permissions for the NETWORK SERVICE on the private key of this certificate: " + $rights)
+                      }
+                    } else {
+                      Write-Diag "[ERROR]  Missing permissions for the NETWORK SERVICE account on the private key of this certificate"
+                    }
+                  } else {
+                    Write-Diag "[ERROR]  Cannot find the private key"
+                  } 
+                  $num++
                 }
               }
               if ($num -eq 0) {
@@ -857,6 +876,7 @@ if (Test-Path -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventFor
     } 
   }
 } else {
+  $isForwarder = $false
   Write-Diag "[INFO] No SubscriptionManager URL configured. It's ok if this machine is not supposed to forward events."
 }
 
@@ -974,5 +994,14 @@ if ($aCert.Count -gt 0) {
   Write-Diag "[ERROR] Found for non-Root certificates in the Root store"
   foreach ($cert in $acert) {
     Write-Diag ("[ERROR]  Misplaced certificate " + $cert.Subject)
+  }
+}
+
+if ($isForwarder) {
+  $evtLogReaders = (Get-WmiObject -Query ("Associators of {Win32_Group.Domain='" + $env:COMPUTERNAME + "',Name='Event Log Readers'} where Role=GroupComponent") | Where {$_.Name -eq "NETWORK SERVICE"} | Measure-Object)
+  if ($evtLogReaders.Count -gt 0) {
+    Write-Diag "[INFO] The NETWORK SERVICE account is member of the Event Log Readers group"
+  } else {
+    Write-Diag "[WARNING] The NETWORK SERVICE account is NOT member of the Event Log Readers group, the events in the Security log cannot be forwarded"
   }
 }

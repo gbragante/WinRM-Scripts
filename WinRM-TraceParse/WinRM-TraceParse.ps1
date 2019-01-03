@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20181022
+# Version 20190103
 
 param (
   [string]$InputFile
@@ -322,6 +322,8 @@ while (-not $sr.EndOfStream) {
     $rowCAPI.TaskID = $xmlCAPI.FirstChild.CorrelationAuxInfo.TaskId
     $rowCAPI.Seq = $xmlCAPI.FirstChild.CorrelationAuxInfo.SeqNumber
     $rowCAPI.FileName = $filename
+
+    Write-Host $time $rowCAPI.Operation
 
     if ($xmlCAPI.FirstChild.Certificate) {
       if ($xmlCAPI.FirstChild.Certificate.Count -gt 1) {
