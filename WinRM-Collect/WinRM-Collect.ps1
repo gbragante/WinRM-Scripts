@@ -1,5 +1,5 @@
-$version = "WinRm-Collect (20190103)"
-$DiagVersion = "WinRM-Diag (20190103)"
+$version = "WinRm-Collect (20190107)"
+$DiagVersion = "WinRM-Diag (20190107)"
 
 # by Gianni Bragante - gbrag@microsoft.com
 
@@ -132,16 +132,34 @@ Function GetStore($store) {
   foreach ($cert in $certlist) {
     $EKU = ""
     foreach ($item in $cert.EnhancedKeyUsageList) {
-      $EKU += $item.FriendlyName + " / "
+      if ($item.FriendlyName) {
+        $EKU += $item.FriendlyName + " / "
+      } else {
+        $EKU += $item.ObjectId + " / "
+      }
+    }
+
+    $row = $tbcert.NewRow()
+
+    foreach ($ext in $cert.Extensions) {
+      if ($ext.oid.value -eq "2.5.29.14") {
+        $row.SubjectKeyIdentifier = $ext.SubjectKeyIdentifier.ToLower()
+      }
+      if (($ext.oid.value -eq "2.5.29.35") -or ($ext.oid.value -eq "2.5.29.1")) { 
+        $asn = New-Object Security.Cryptography.AsnEncodedData ($ext.oid,$ext.RawData)
+        $aki = $asn.Format($true).ToString().Replace(" ","")
+        $aki = (($aki -split '\n')[0]).Replace("KeyID=","").Trim()
+        $row.AuthorityKeyIdentifier = $aki
+      }
     }
     if ($EKU) {$EKU = $eku.Substring(0, $eku.Length-3)} 
-    $row = $tbcert.NewRow()
     $row.Store = $store
     $row.Thumbprint = $cert.Thumbprint.ToLower()
     $row.Subject = $cert.Subject
     $row.Issuer = $cert.Issuer
     $row.NotAfter = $cert.NotAfter
     $row.EnhancedKeyUsage = $EKU
+    $row.SerialNumber = $cert.SerialNumber.ToLower()
     $tbcert.Rows.Add($row)
   } 
 }
@@ -611,7 +629,6 @@ $cmd = "Certutil -verifystore -v CA > """ + $resDir + "\Certificates-Intermediat
 Write-Log $cmd
 Invoke-Expression $cmd
 
-$Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
 $tbCert = New-Object system.Data.DataTable
 $col = New-Object system.Data.DataColumn Store,([string]); $tbCert.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Thumbprint,([string]); $tbCert.Columns.Add($col)
@@ -620,6 +637,9 @@ $col = New-Object system.Data.DataColumn Issuer,([string]); $tbCert.Columns.Add(
 $col = New-Object system.Data.DataColumn NotAfter,([DateTime]); $tbCert.Columns.Add($col)
 $col = New-Object system.Data.DataColumn IssuerThumbprint,([string]); $tbCert.Columns.Add($col)
 $col = New-Object system.Data.DataColumn EnhancedKeyUsage,([string]); $tbCert.Columns.Add($col)
+$col = New-Object system.Data.DataColumn SerialNumber,([string]); $tbCert.Columns.Add($col)
+$col = New-Object system.Data.DataColumn SubjectKeyIdentifier,([string]); $tbCert.Columns.Add($col)
+$col = New-Object system.Data.DataColumn AuthorityKeyIdentifier,([string]); $tbCert.Columns.Add($col)
 
 GetStore "My"
 GetStore "CA"
@@ -628,7 +648,7 @@ GetStore "Root"
 Write-Log "Matching issuer thumbprints"
 $aCert = $tbCert.Select("Store = 'My' or Store = 'CA'")
 foreach ($cert in $aCert) {
-  $aIssuer = $tbCert.Select("Subject = '" + ($cert.Issuer).tostring() + "'")
+  $aIssuer = $tbCert.Select("SubjectKeyIdentifier = '" + ($cert.AuthorityKeyIdentifier).tostring() + "'")
   if ($aIssuer.Count -gt 0) {
     $cert.IssuerThumbprint = ($aIssuer[0].Thumbprint).ToString()
   }
@@ -889,10 +909,10 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
     foreach ($result in $results) {
       Write-Diag ("[INFO] The SPN HTTP/$env:COMPUTERNAME is registered for DNS name = " + $result.properties.dnshostname + ", DN = " + $result.properties.distinguishedname + ", Category = " + $result.properties.objectcategory)
       if (-not $result.properties.objectcategory[0].Contains("Computer")) {
-        Write-Diag "[WARNING] The The SPN HTTP/$env:COMPUTERNAME is NOT registered for a computer account"
+        Write-Diag "[ERROR] The The SPN HTTP/$env:COMPUTERNAME is NOT registered for a computer account"
       }
       if (-not $result.properties.dnshostname[0].Contains($env:COMPUTERNAME)) {
-        Write-Diag "[ERROR] The The SPN HTTP/$env:COMPUTERNAME is registered for different computer account"
+        Write-Diag ("[ERROR] The The SPN HTTP/$env:COMPUTERNAME is registered for different DNS host name: " + $result.properties.dnshostname[0])
       }
     }
     if ($results.count -gt 1) {
@@ -933,7 +953,7 @@ $th = (get-item WSMan:\localhost\Client\TrustedHosts).value
 if ($th) {
   Write-Diag ("[INFO] TrustedHosts contains: $th")
 } else {
-  Write-Diag ("[INFO] TrustedHosts is not configured")
+  Write-Diag ("[INFO] TrustedHosts is not configured, it's ok it this machine is not supposed to connect to other machines using NTLM")
 }
 
 $psver = $PSVersionTable.PSVersion.Major.ToString() + $PSVersionTable.PSVersion.Minor.ToString()
