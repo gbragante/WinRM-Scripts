@@ -1,5 +1,5 @@
-$version = "WinRm-Collect (20190107)"
-$DiagVersion = "WinRM-Diag (20190107)"
+$version = "WinRm-Collect (20190109)"
+$DiagVersion = "WinRM-Diag (20190109)"
 
 # by Gianni Bragante - gbrag@microsoft.com
 
@@ -921,8 +921,38 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
   } else {
     Write-Diag "[INFO] The The SPN HTTP/$env:COMPUTERNAME was not found. That's ok, the SPN HOST/$env:COMPUTERNAME will be used"
   }
+
+  Write-Diag "[INFO] Checking the WinRMRemoteWMIUsers__ group"
+  $search.filter = "(samaccountname=WinRMRemoteWMIUsers__)"
+  $results = $search.Findall()
+  Write-Diag ("[INFO] Found " + $results.Properties.distinguishedname)
+  if ($results) {
+    if ($results.Properties.grouptype -eq  -2147483644) {
+      Write-Diag "[INFO] WinRMRemoteWMIUsers__ is a Domain local group"
+    } elseif ($results.Properties.grouptype -eq -2147483646) {
+      Write-Diag "[WARNING] WinRMRemoteWMIUsers__ is a Global group"
+    } elseif ($results.Properties.grouptype -eq -2147483640) {
+      Write-Diag "[WARNING] WinRMRemoteWMIUsers__ is a Universal group"
+    }
+    if (Get-WmiObject -query "select * from Win32_Group where Name = 'WinRMRemoteWMIUsers__' and Domain = '$env:computername'") {
+      Write-Diag "[INFO] The group WinRMRemoteWMIUsers__ is also present as machine local group"
+    }
+  } else {
+    Write-Diag "[ERROR] The WinRMRemoteWMIUsers__ was not found in the domain" 
+    if (Get-WmiObject -query "select * from Win32_Group where Name = 'WinRMRemoteWMIUsers__' and Domain = '$env:computername'") {
+      Write-Diag "[INFO] The group WinRMRemoteWMIUsers__ is present as machine local group"
+    } else {
+      Write-Diag "[ERROR] The group WinRMRemoteWMIUsers__ is not even present as machine local group"
+    }
+  }
+
 } else {
   Write-Diag "[INFO] The machine is not joined to a domain"
+  if (Get-WmiObject -query "select * from Win32_Group where Name = 'WinRMRemoteWMIUsers__' and Domain = '$env:computername'") {
+    Write-Diag "[INFO] The group WinRMRemoteWMIUsers__ is present as machine local group"
+  } else {
+    Write-Diag "[ERROR] The group WinRMRemoteWMIUsers__ is not present as machine local group"
+  }
 }
 
 $iplisten = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters" | Select-Object -ExpandProperty "ListenOnlyList" -ErrorAction SilentlyContinue)
