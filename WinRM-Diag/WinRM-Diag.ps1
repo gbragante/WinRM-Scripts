@@ -1,4 +1,4 @@
-$DiagVersion = "WinRM-Diag (20190109)"
+$DiagVersion = "WinRM-Diag (20190121)"
 # by Gianni Bragante gbrag@microsoft.com
 
 Function FindSep {
@@ -155,6 +155,23 @@ foreach ($listener in $listeners) {
     }
   } 
 } 
+
+$svccert = Get-Item WSMan:\localhost\Service\CertificateThumbprint
+if ($svccert.value ) {
+  Write-Diag ("[INFO] The Service Certificate thumbprint is " + $svccert.value)
+  $aCert = $tbCert.Select("Thumbprint = '" + $svccert.value + "' and Store = 'My'")
+  if ($aCert.Count -gt 0) {
+    Write-Diag ("[INFO] Service certificate found, subject is " + $aCert[0].Subject)
+    if (($aCert[0].NotAfter) -gt (Get-Date)) {
+      Write-Diag ("[INFO] The Service certificate will expire on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
+    } else {
+      Write-Diag ("[ERROR] The Service certificate expired on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
+    }
+  }  else {
+    Write-Diag ("[ERROR] The certificate configured for the service " + $svccert.value + "is not avalable in LocalMachine/My store")
+  }
+}
+
 
 $ipfilter = Get-Item WSMan:\localhost\Service\IPv4Filter
 if ($ipfilter.Value) {
