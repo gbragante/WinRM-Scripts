@@ -1,4 +1,4 @@
-$DiagVersion = "WinRM-Diag (20190121)"
+$DiagVersion = "WinRM-Diag (20190123)"
 # by Gianni Bragante gbrag@microsoft.com
 
 Function FindSep {
@@ -276,7 +276,7 @@ if (Test-Path -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventFor
 }
 
 if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
-  $search = New-Object DirectoryServices.DirectorySearcher([ADSI]"")
+  $search = New-Object DirectoryServices.DirectorySearcher([ADSI]"GC://$env:USERDNSDOMAIN")
   Write-Diag ("[INFO] Searching for the SPN HTTP/$env:COMPUTERNAME")
   $search.filter = "(servicePrincipalName=HTTP/$env:COMPUTERNAME)"
   $results = $search.Findall()
