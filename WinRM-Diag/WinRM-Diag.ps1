@@ -1,4 +1,4 @@
-$DiagVersion = "WinRM-Diag (20190123)"
+$DiagVersion = "WinRM-Diag (20190125)"
 # by Gianni Bragante gbrag@microsoft.com
 
 Function FindSep {
@@ -276,7 +276,7 @@ if (Test-Path -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventFor
 }
 
 if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
-  $search = New-Object DirectoryServices.DirectorySearcher([ADSI]"GC://$env:USERDNSDOMAIN")
+  $search = New-Object DirectoryServices.DirectorySearcher([ADSI]"GC://$env:USERDNSDOMAIN") # The SPN is searched in the forest connecting to a Global catalog
   Write-Diag ("[INFO] Searching for the SPN HTTP/$env:COMPUTERNAME")
   $search.filter = "(servicePrincipalName=HTTP/$env:COMPUTERNAME)"
   $results = $search.Findall()
@@ -298,6 +298,7 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
   }
 
   Write-Diag "[INFO] Checking the WinRMRemoteWMIUsers__ group"
+  $search = New-Object DirectoryServices.DirectorySearcher([ADSI]"")  # This is a Domain local group, therefore we need to collect to a non-global catalog
   $search.filter = "(samaccountname=WinRMRemoteWMIUsers__)"
   $results = $search.Findall()
   Write-Diag ("[INFO] Found " + $results.Properties.distinguishedname)
