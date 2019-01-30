@@ -1,5 +1,5 @@
-$version = "WinRm-Collect (20190109)"
-$DiagVersion = "WinRM-Diag (20190109)"
+$version = "WinRm-Collect (20190130)"
+$DiagVersion = "WinRM-Diag (20190130)"
 
 # by Gianni Bragante - gbrag@microsoft.com
 
@@ -798,6 +798,22 @@ foreach ($listener in $listeners) {
   } 
 } 
 
+$svccert = Get-Item WSMan:\localhost\Service\CertificateThumbprint
+if ($svccert.value ) {
+  Write-Diag ("[INFO] The Service Certificate thumbprint is " + $svccert.value)
+  $aCert = $tbCert.Select("Thumbprint = '" + $svccert.value + "' and Store = 'My'")
+  if ($aCert.Count -gt 0) {
+    Write-Diag ("[INFO] Service certificate found, subject is " + $aCert[0].Subject)
+    if (($aCert[0].NotAfter) -gt (Get-Date)) {
+      Write-Diag ("[INFO] The Service certificate will expire on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
+    } else {
+      Write-Diag ("[ERROR] The Service certificate expired on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
+    }
+  }  else {
+    Write-Diag ("[ERROR] The certificate configured for the service " + $svccert.value + "is not avalable in LocalMachine/My store")
+  }
+}
+
 $ipfilter = Get-Item WSMan:\localhost\Service\IPv4Filter
 if ($ipfilter.Value) {
   if ($ipfilter.Value -eq "*") {
@@ -901,7 +917,7 @@ if (Test-Path -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventFor
 }
 
 if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
-  $search = New-Object DirectoryServices.DirectorySearcher([ADSI]"")
+  $search = New-Object DirectoryServices.DirectorySearcher([ADSI]"GC://$env:USERDNSDOMAIN") # The SPN is searched in the forest connecting to a Global catalog
   Write-Diag ("[INFO] Searching for the SPN HTTP/$env:COMPUTERNAME")
   $search.filter = "(servicePrincipalName=HTTP/$env:COMPUTERNAME)"
   $results = $search.Findall()
@@ -923,6 +939,7 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
   }
 
   Write-Diag "[INFO] Checking the WinRMRemoteWMIUsers__ group"
+  $search = New-Object DirectoryServices.DirectorySearcher([ADSI]"")  # This is a Domain local group, therefore we need to collect to a non-global catalog
   $search.filter = "(samaccountname=WinRMRemoteWMIUsers__)"
   $results = $search.Findall()
   Write-Diag ("[INFO] Found " + $results.Properties.distinguishedname)

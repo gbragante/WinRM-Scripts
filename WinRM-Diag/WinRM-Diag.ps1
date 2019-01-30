@@ -1,4 +1,4 @@
-$DiagVersion = "WinRM-Diag (20190125)"
+$DiagVersion = "WinRM-Diag (20190130)"
 # by Gianni Bragante gbrag@microsoft.com
 
 Function FindSep {
@@ -171,7 +171,6 @@ if ($svccert.value ) {
     Write-Diag ("[ERROR] The certificate configured for the service " + $svccert.value + "is not avalable in LocalMachine/My store")
   }
 }
-
 
 $ipfilter = Get-Item WSMan:\localhost\Service\IPv4Filter
 if ($ipfilter.Value) {
