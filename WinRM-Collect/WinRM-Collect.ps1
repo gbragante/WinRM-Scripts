@@ -1,5 +1,5 @@
-$version = "WinRm-Collect (20190130)"
-$DiagVersion = "WinRM-Diag (20190130)"
+$version = "WinRM-Collect (20190213)"
+$DiagVersion = "WinRM-Diag (20190213)"
 
 # by Gianni Bragante - gbrag@microsoft.com
 
@@ -162,6 +162,29 @@ Function GetStore($store) {
     $row.SerialNumber = $cert.SerialNumber.ToLower()
     $tbcert.Rows.Add($row)
   } 
+}
+
+Function ChkCert($cert, $store, $descr) {
+  $cert = $cert.ToLower()
+  if ($cert) {
+    if ("0123456789abcdef".Contains($cert[0])) {
+      $aCert = $tbCert.Select("Thumbprint = '" + $cert + "' and $store")
+      if ($aCert.Count -gt 0) {
+        Write-Diag ("[INFO] The $descr certificate was found, the subject is " + $aCert[0].Subject)
+        if (($aCert[0].NotAfter) -gt (Get-Date)) {
+          Write-Diag ("[INFO] The $descr certificate will expire on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
+        } else {
+          Write-Diag ("[ERROR] The $descr certificate expired on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
+        }
+      }  else {
+        Write-Diag "[ERROR] The certificate with thumbprint $cert was not found in $store"
+      }
+    } else {
+      Write-Diag "[ERROR] Invalid character in the $cert certificate thumbprint $cert"
+    }
+  } else {
+    Write-Diag "[ERROR] The thumbprint of $descr certificate is empty"
+  }
 }
 
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -360,12 +383,18 @@ Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
 Write-Log "Copying hosts and lmhosts"
-Copy-Item C:\Windows\system32\drivers\etc\hosts $resDir\hosts.txt -ErrorAction Continue 2>>$errfile
-Copy-Item C:\Windows\system32\drivers\etc\lmhosts $resDir\lmhosts.txt -ErrorAction Continue 2>>$errfile
+if (Test-path -path C:\Windows\system32\drivers\etc\hosts) {
+  Copy-Item C:\Windows\system32\drivers\etc\hosts $resDir\hosts.txt -ErrorAction Continue 2>>$errfile
+}
+if (Test-Path -Path C:\Windows\system32\drivers\etc\lmhosts) {
+  Copy-Item C:\Windows\system32\drivers\etc\lmhosts $resDir\lmhosts.txt -ErrorAction Continue 2>>$errfile
+}
 
 $dir = $env:windir + "\system32\logfiles\HTTPERR"
-$last = Get-ChildItem -path ($dir) | Sort CreationTime -Descending | Select Name -First 1 
-Copy-Item ($dir + "\" + $last.name) $resDir\httperr.log -ErrorAction Continue 2>>$errfile
+if (Test-Path -path $dir) {
+  $last = Get-ChildItem -path ($dir) | Sort CreationTime -Descending | Select Name -First 1 
+  Copy-Item ($dir + "\" + $last.name) $resDir\httperr.log -ErrorAction Continue 2>>$errfile
+}
 
 Write-Log "WinHTTP proxy configuration"
 $cmd = "netsh winhttp show proxy >""" + $resDir + "\WinHTTP-Proxy.txt""" + $RdrErr
@@ -755,6 +784,55 @@ Write-Diag ("[INFO] " + $DiagVersion)
 
 $OSVer = [environment]::OSVersion.Version.Major + [environment]::OSVersion.Version.Minor * 0.1
 
+$Subscriptions = Get-ChildItem -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector\Subscriptions
+foreach ($sub in $Subscriptions) {
+  Write-Diag ("[INFO] Found subscription " + $sub.PSChildname)
+  $SubProp = ($sub | Get-ItemProperty)
+
+  if ($SubProp.Locale) {
+    if ($SubProp.Locale -eq "en-US") {
+      Write-Diag "[INFO]   The subscription's locale is set to en-US"
+    } else {
+      Write-Diag ("[WARNING] The subscription's locale is set to " + $SubProp.Locale)
+    }
+  } else {
+   Write-Diag "[INFO]   The subscription's locale is not set, the default locale will be used."    
+  }
+
+  if ($SubProp.AllowedSubjects) {
+    Write-Diag "[INFO]   Listed non-domain computers:"
+    $list = $SubProp.AllowedSubjects -split ","
+    foreach ($item in $list) {
+      Write-Diag ("[INFO]   " + $item)
+    }
+  } else {
+    Write-Diag "[INFO]   No non-domain computers listed, that's ok if this is not a collector in workgroup environment"
+  }
+
+  if ($SubProp.AllowedIssuerCAs) {
+    Write-Diag "[INFO]   Listed Issuer CAs:"
+    $list = $SubProp.AllowedIssuerCAs -split ","
+    foreach ($item in $list) {
+      Write-Diag ("[INFO]   " + $item)
+      ChkCert -cert $item -store "(Store = 'CA' or Store = 'Root')" -descr "Issuer CA"
+    }
+  } else {
+    Write-Diag "[INFO]   No Issuer CAs listed, that's ok if this is not a collector in workgroup environment"
+  }
+
+  $RegKey = (($sub.Name).replace("HKEY_LOCAL_MACHINE\","HKLM:\") + "\EventSources")
+  if (Test-Path -Path $RegKey) {
+    $sources = Get-ChildItem -Path $RegKey
+    if ($sources.Count -gt 4000) {
+      Write-Diag ("[WARNING] There are " + $sources.Count + " sources for this subscription")
+    } else {
+      Write-Diag ("[INFO]   There are " + $sources.Count + " sources for this subscription")
+    }
+  } else {
+    Write-Diag ("[INFO]   No sources found for the subscription " + $sub.Name)
+  }
+}
+
 if ($OSVer -gt 6.1) {
   Write-Diag "[INFO] Retrieving machine's IP addresses"
   $iplist = Get-NetIPAddress
@@ -772,17 +850,7 @@ foreach ($listener in $listeners) {
         $listenerThumbprint = $value.Value.ToLower()
         Write-Diag "[INFO] Found listener certificate $listenerThumbprint"
         if ($listenerThumbprint) {
-          $aCert = $tbCert.Select("Thumbprint = '" + $listenerThumbprint + "' and Store = 'My'")
-          if ($aCert.Count -gt 0) {
-            Write-Diag ("[INFO] Listener certificate found, subject is " + $aCert[0].Subject)
-            if (($aCert[0].NotAfter) -gt (Get-Date)) {
-              Write-Diag ("[INFO] The listener certificate will expire on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
-            } else {
-              Write-Diag ("[ERROR] The listener certificate expired on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
-            }
-          }  else {
-            Write-Diag "[ERROR] The certificate specified in the listener $listenerThumbprint is not avalable in LocalMachine/My store"
-          }
+          ChkCert -cert $listenerThumbprint -descr "listener" -store "Store = 'My'"
         }
       }
     }
@@ -801,17 +869,7 @@ foreach ($listener in $listeners) {
 $svccert = Get-Item WSMan:\localhost\Service\CertificateThumbprint
 if ($svccert.value ) {
   Write-Diag ("[INFO] The Service Certificate thumbprint is " + $svccert.value)
-  $aCert = $tbCert.Select("Thumbprint = '" + $svccert.value + "' and Store = 'My'")
-  if ($aCert.Count -gt 0) {
-    Write-Diag ("[INFO] Service certificate found, subject is " + $aCert[0].Subject)
-    if (($aCert[0].NotAfter) -gt (Get-Date)) {
-      Write-Diag ("[INFO] The Service certificate will expire on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
-    } else {
-      Write-Diag ("[ERROR] The Service certificate expired on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
-    }
-  }  else {
-    Write-Diag ("[ERROR] The certificate configured for the service " + $svccert.value + "is not avalable in LocalMachine/My store")
-  }
+  ChkCert -cert $svccert.value -descr "Service" -store "Store = 'My'"
 }
 
 $ipfilter = Get-Item WSMan:\localhost\Service\IPv4Filter
@@ -1019,21 +1077,7 @@ if ($clientcert.Count -gt 0) {
     foreach ($value in $prop) {
       Write-Diag ("[INFO]   " + $value.Name + " " + $value.Value)
       if ($value.Name -eq "Issuer") {
-        if ("0123456789abcdef".Contains($value.Value[0])) {
-          $aCert = $tbCert.Select("Thumbprint = '" + $value.Value + "' and (Store = 'CA' or Store = 'Root')")
-          if ($aCert.Count -eq 0) {
-            Write-Diag "[ERROR]     The mapping certificate was not found in CA or Root stores"
-          } else {
-            Write-Diag ("[INFO]     Found mapping certificate, subject = " + $aCert[0].Subject)
-            if (($aCert[0].NotAfter) -gt (Get-Date)) {
-              Write-Diag ("[INFO]     The mapping certificate will expire on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
-            } else {
-              Write-Diag ("[ERROR]     The mapping certificate expired on " + $aCert[0].NotAfter.ToString("yyyyMMdd HH:mm:ss.fff") )
-            }
-          }
-        } else {
-          Write-Diag "[ERROR] Invalid character in the certificate thumbprint"
-        }
+        ChkCert -cert $value.Value -descr "mapping" -store "(Store = 'Root' or Store = 'CA')"
       } elseif ($value.Name -eq "UserName") {
         $usr = Get-WmiObject -class Win32_UserAccount | Where {$_.Name -eq $value.value}
         if ($usr) {
