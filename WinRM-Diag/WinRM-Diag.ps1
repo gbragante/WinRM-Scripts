@@ -1,4 +1,4 @@
-$DiagVersion = "WinRM-Diag (20190130)"
+$DiagVersion = "WinRM-Diag (20190213)"
 # by Gianni Bragante gbrag@microsoft.com
 
 Function FindSep {
@@ -112,6 +112,31 @@ $tbcert | Export-Csv ($resDir + "\certificates.tsv") -noType -Delimiter "`t"
 # Diag start
 
 $OSVer = [environment]::OSVersion.Version.Major + [environment]::OSVersion.Version.Minor * 0.1
+
+$Subscriptions = Get-ChildItem -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector\Subscriptions
+foreach ($sub in $Subscriptions) {
+  Write-Diag ("[INFO] Found subscription " + $sub.PSChildname)
+  $SubProp = ($sub | Get-ItemProperty)
+
+  if ($SubProp.Locale) {
+    if ($SubProp.Locale -eq "en-US") {
+      Write-Diag "[INFO] The subscription's locale is set to en-US"
+    } else {
+      Write-Diag ("[WARNING] The subscription's locale is set to " + $SubProp.Locale)
+    }
+  } else {
+   Write-Diag "[INFO] The subscription's locale is not set, the default locale will be used."    
+  }
+
+  $sources = Get-ChildItem -Path (($sub.Name).replace("HKEY_LOCAL_MACHINE\","HKLM:\") + "\EventSources")
+  if ($sources) {
+    if ($sources.Count -gt 4000) {
+      Write-Diag ("[WARNING] There are " + $sources.Count + " sources for this subscription")
+    } else {
+      Write-Diag ("[INFO] There are " + $sources.Count + " sources for this subscription")
+    }
+  }  
+}
 
 if ($OSVer -gt 6.1) {
   Write-Diag "[INFO] Retrieving machine's IP addresses"
