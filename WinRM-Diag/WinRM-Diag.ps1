@@ -1,4 +1,4 @@
-$DiagVersion = "WinRM-Diag (20190213)"
+$DiagVersion = "WinRM-Diag (20190226)"
 # by Gianni Bragante gbrag@microsoft.com
 
 Function FindSep {
@@ -137,6 +137,8 @@ $tbcert | Export-Csv ($resDir + "\certificates.tsv") -noType -Delimiter "`t"
 
 $OSVer = [environment]::OSVersion.Version.Major + [environment]::OSVersion.Version.Minor * 0.1
 
+$subDom = $false
+$subWG = $false
 $Subscriptions = Get-ChildItem -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector\Subscriptions
 foreach ($sub in $Subscriptions) {
   Write-Diag ("[INFO] Found subscription " + $sub.PSChildname)
@@ -153,6 +155,7 @@ foreach ($sub in $Subscriptions) {
   }
 
   if ($SubProp.AllowedSubjects) {
+    $subWG = $true
     Write-Diag "[INFO]   Listed non-domain computers:"
     $list = $SubProp.AllowedSubjects -split ","
     foreach ($item in $list) {
@@ -163,6 +166,7 @@ foreach ($sub in $Subscriptions) {
   }
 
   if ($SubProp.AllowedIssuerCAs) {
+    $subWG = $true
     Write-Diag "[INFO]   Listed Issuer CAs:"
     $list = $SubProp.AllowedIssuerCAs -split ","
     foreach ($item in $list) {
@@ -373,13 +377,22 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
       Write-Diag "[ERROR] The group WinRMRemoteWMIUsers__ is not even present as machine local group"
     }
   }
-
+  if ((Get-ChildItem WSMan:\localhost\Service\Auth\Kerberos).value -eq "true") {
+    Write-Diag "[INFO] Kerberos authentication is enabled for the service"
+  }  else {
+    Write-Diag "[WARNING] Kerberos authentication is disabled for the service"
+  }
 } else {
   Write-Diag "[INFO] The machine is not joined to a domain"
   if (Get-WmiObject -query "select * from Win32_Group where Name = 'WinRMRemoteWMIUsers__' and Domain = '$env:computername'") {
     Write-Diag "[INFO] The group WinRMRemoteWMIUsers__ is present as machine local group"
   } else {
     Write-Diag "[ERROR] The group WinRMRemoteWMIUsers__ is not present as machine local group"
+  }
+  if ((Get-ChildItem WSMan:\localhost\Service\Auth\Certificate).value -eq "false") {
+    Write-Diag "[WARNING] Certificate authentication is disabled for the service"
+  }  else {
+    Write-Diag "[INFO] Certificate authentication is enabled for the service"
   }
 }
 
@@ -450,7 +463,9 @@ if ($clientcert.Count -gt 0) {
     }
   }
 } else {
-  Write-Diag "[INFO] No client certificate mapping configured, that's ok if this machine is not supposed to accept certificate authentication clients"
+  if ($subWG) {
+    Write-Diag "[ERROR] No client certificate mapping configured"
+  }
 }
 
 $aCert = $tbCert.Select("Store = 'Root' and Subject <> Issuer")
