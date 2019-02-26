@@ -357,8 +357,8 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
   $search = New-Object DirectoryServices.DirectorySearcher([ADSI]"")  # This is a Domain local group, therefore we need to collect to a non-global catalog
   $search.filter = "(samaccountname=WinRMRemoteWMIUsers__)"
   $results = $search.Findall()
-  Write-Diag ("[INFO] Found " + $results.Properties.distinguishedname)
-  if ($results) {
+  if ($results.count -gt 0) {
+    Write-Diag ("[INFO] Found " + $results.Properties.distinguishedname)
     if ($results.Properties.grouptype -eq  -2147483644) {
       Write-Diag "[INFO] WinRMRemoteWMIUsers__ is a Domain local group"
     } elseif ($results.Properties.grouptype -eq -2147483646) {
