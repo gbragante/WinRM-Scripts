@@ -143,7 +143,7 @@ $Subscriptions = Get-ChildItem -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVer
 foreach ($sub in $Subscriptions) {
   Write-Diag ("[INFO] Found subscription " + $sub.PSChildname)
   $SubProp = ($sub | Get-ItemProperty)
-  Write-Diag ("SubscriptionType = " + $SubProp.SubscriptionType + ", ConfigurationMode = " + $SubProp.ConfigurationMode)
+  Write-Diag ("[INFO]   SubscriptionType = " + $SubProp.SubscriptionType + ", ConfigurationMode = " + $SubProp.ConfigurationMode)
 
   if ($SubProp.Locale) {
     if ($SubProp.Locale -eq "en-US") {
@@ -491,4 +491,24 @@ if ($fwrules.count -eq 0) {
   Write-Diag "[INFO] No firewall rule for port 5986"
 } else {
   Write-Diag "[INFO] Found firewall rule for port 5986"
+}
+
+$dir = $env:windir + "\system32\logfiles\HTTPERR"
+if (Test-Path -path $dir) {
+  $httperrfiles = Get-ChildItem -path ($dir)
+  if ($httperrfiles.Count -gt 100) {
+    Write-Diag ("[WARNING] There are " + $httperrfiles.Count + " files in the folder " + $dir)
+  } else {
+   Write-Diag ("[INFO] There are " + $httperrfiles.Count + " files in the folder " + $dir)
+  }
+  $size = 0 
+  foreach ($file in $httperrfiles) {
+    $size += $file.Length
+  }
+  $size = [System.Math]::Ceiling($size / 1024 / 1024) # Convert to MB
+  if ($size -gt 100) {
+    Write-Diag ("[WARNING] The folder " + $dir + " is using " + $size.ToString() + " MB of disk space")
+  } else {
+    Write-Diag ("[INFO] The folder " + $dir + " is using " + $size.ToString() + " MB of disk space")
+  }
 }
