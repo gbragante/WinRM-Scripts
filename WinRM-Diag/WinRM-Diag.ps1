@@ -143,6 +143,7 @@ $Subscriptions = Get-ChildItem -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVer
 foreach ($sub in $Subscriptions) {
   Write-Diag ("[INFO] Found subscription " + $sub.PSChildname)
   $SubProp = ($sub | Get-ItemProperty)
+  Write-Diag ("SubscriptionType = " + $SubProp.SubscriptionType + ", ConfigurationMode = " + $SubProp.ConfigurationMode)
 
   if ($SubProp.Locale) {
     if ($SubProp.Locale -eq "en-US") {
@@ -483,4 +484,11 @@ if ($isForwarder) {
   } else {
     Write-Diag "[WARNING] The NETWORK SERVICE account is NOT member of the Event Log Readers group, the events in the Security log cannot be forwarded"
   }
+}
+
+$fwrules = (Get-NetFirewallPortFilter –Protocol TCP | Where { $_.localport –eq ‘5986’ } | Get-NetFirewallRule)
+if ($fwrules.count -eq 0) {
+  Write-Diag "[INFO] No firewall rule for port 5986"
+} else {
+  Write-Diag "[INFO] Found firewall rule for port 5986"
 }
