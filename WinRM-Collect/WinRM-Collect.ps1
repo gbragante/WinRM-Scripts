@@ -1,5 +1,5 @@
-$version = "WinRM-Collect (20190213)"
-$DiagVersion = "WinRM-Diag (20190213)"
+$version = "WinRM-Collect (20190226)"
+$DiagVersion = "WinRM-Diag (20190226)"
 
 # by Gianni Bragante - gbrag@microsoft.com
 
@@ -784,10 +784,13 @@ Write-Diag ("[INFO] " + $DiagVersion)
 
 $OSVer = [environment]::OSVersion.Version.Major + [environment]::OSVersion.Version.Minor * 0.1
 
+$subDom = $false
+$subWG = $false
 $Subscriptions = Get-ChildItem -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector\Subscriptions
 foreach ($sub in $Subscriptions) {
   Write-Diag ("[INFO] Found subscription " + $sub.PSChildname)
   $SubProp = ($sub | Get-ItemProperty)
+  Write-Diag ("[INFO]   SubscriptionType = " + $SubProp.SubscriptionType + ", ConfigurationMode = " + $SubProp.ConfigurationMode)
 
   if ($SubProp.Locale) {
     if ($SubProp.Locale -eq "en-US") {
@@ -800,6 +803,7 @@ foreach ($sub in $Subscriptions) {
   }
 
   if ($SubProp.AllowedSubjects) {
+    $subWG = $true
     Write-Diag "[INFO]   Listed non-domain computers:"
     $list = $SubProp.AllowedSubjects -split ","
     foreach ($item in $list) {
@@ -810,6 +814,7 @@ foreach ($sub in $Subscriptions) {
   }
 
   if ($SubProp.AllowedIssuerCAs) {
+    $subWG = $true
     Write-Diag "[INFO]   Listed Issuer CAs:"
     $list = $SubProp.AllowedIssuerCAs -split ","
     foreach ($item in $list) {
@@ -1000,8 +1005,8 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
   $search = New-Object DirectoryServices.DirectorySearcher([ADSI]"")  # This is a Domain local group, therefore we need to collect to a non-global catalog
   $search.filter = "(samaccountname=WinRMRemoteWMIUsers__)"
   $results = $search.Findall()
-  Write-Diag ("[INFO] Found " + $results.Properties.distinguishedname)
-  if ($results) {
+  if ($results.count -gt 0) {
+    Write-Diag ("[INFO] Found " + $results.Properties.distinguishedname)
     if ($results.Properties.grouptype -eq  -2147483644) {
       Write-Diag "[INFO] WinRMRemoteWMIUsers__ is a Domain local group"
     } elseif ($results.Properties.grouptype -eq -2147483646) {
@@ -1020,13 +1025,22 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
       Write-Diag "[ERROR] The group WinRMRemoteWMIUsers__ is not even present as machine local group"
     }
   }
-
+  if ((Get-ChildItem WSMan:\localhost\Service\Auth\Kerberos).value -eq "true") {
+    Write-Diag "[INFO] Kerberos authentication is enabled for the service"
+  }  else {
+    Write-Diag "[WARNING] Kerberos authentication is disabled for the service"
+  }
 } else {
   Write-Diag "[INFO] The machine is not joined to a domain"
   if (Get-WmiObject -query "select * from Win32_Group where Name = 'WinRMRemoteWMIUsers__' and Domain = '$env:computername'") {
     Write-Diag "[INFO] The group WinRMRemoteWMIUsers__ is present as machine local group"
   } else {
     Write-Diag "[ERROR] The group WinRMRemoteWMIUsers__ is not present as machine local group"
+  }
+  if ((Get-ChildItem WSMan:\localhost\Service\Auth\Certificate).value -eq "false") {
+    Write-Diag "[WARNING] Certificate authentication is disabled for the service"
+  }  else {
+    Write-Diag "[INFO] Certificate authentication is enabled for the service"
   }
 }
 
@@ -1097,7 +1111,9 @@ if ($clientcert.Count -gt 0) {
     }
   }
 } else {
-  Write-Diag "[INFO] No client certificate mapping configured, that's ok if this machine is not supposed to accept certificate authentication clients"
+  if ($subWG) {
+    Write-Diag "[ERROR] No client certificate mapping configured"
+  }
 }
 
 $aCert = $tbCert.Select("Store = 'Root' and Subject <> Issuer")
@@ -1114,5 +1130,32 @@ if ($isForwarder) {
     Write-Diag "[INFO] The NETWORK SERVICE account is member of the Event Log Readers group"
   } else {
     Write-Diag "[WARNING] The NETWORK SERVICE account is NOT member of the Event Log Readers group, the events in the Security log cannot be forwarded"
+  }
+}
+
+$fwrules = (Get-NetFirewallPortFilter –Protocol TCP | Where { $_.localport –eq ‘5986’ } | Get-NetFirewallRule)
+if ($fwrules.count -eq 0) {
+  Write-Diag "[INFO] No firewall rule for port 5986"
+} else {
+  Write-Diag "[INFO] Found firewall rule for port 5986"
+}
+
+$dir = $env:windir + "\system32\logfiles\HTTPERR"
+if (Test-Path -path $dir) {
+  $httperrfiles = Get-ChildItem -path ($dir)
+  if ($httperrfiles.Count -gt 100) {
+    Write-Diag ("[WARNING] There are " + $httperrfiles.Count + " files in the folder " + $dir)
+  } else {
+   Write-Diag ("[INFO] There are " + $httperrfiles.Count + " files in the folder " + $dir)
+  }
+  $size = 0 
+  foreach ($file in $httperrfiles) {
+    $size += $file.Length
+  }
+  $size = [System.Math]::Ceiling($size / 1024 / 1024) # Convert to MB
+  if ($size -gt 100) {
+    Write-Diag ("[WARNING] The folder " + $dir + " is using " + $size.ToString() + " MB of disk space")
+  } else {
+    Write-Diag ("[INFO] The folder " + $dir + " is using " + $size.ToString() + " MB of disk space")
   }
 }
