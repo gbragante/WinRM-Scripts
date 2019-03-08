@@ -1,4 +1,4 @@
-$DiagVersion = "WinRM-Diag (20190226)"
+$DiagVersion = "WinRM-Diag (20190308)"
 # by Gianni Bragante gbrag@microsoft.com
 
 Function FindSep {
@@ -95,6 +95,17 @@ Function ChkCert($cert, $store, $descr) {
   }
 }
 
+Function GetSubVal {
+  param( [string]$SubName, [string]$SubValue)
+  $SubProp = (Get-Item -Path ("HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector\Subscriptions\" + $SubName) | Get-ItemProperty)
+  if ($SubProp.($SubValue)) {
+    return $SubProp.($SubValue)
+  } else {
+    $cm = $SubProp.ConfigurationMode
+    $subVal = (Get-Item -Path ("HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector\ConfigurationModes\" + $cm) | Get-ItemProperty)
+    return $SubVal.($SubValue)
+  }
+}
 
 $Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
 $resName = "WinRM-Diag-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
