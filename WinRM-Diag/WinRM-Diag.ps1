@@ -155,6 +155,7 @@ foreach ($sub in $Subscriptions) {
   Write-Diag ("[INFO] Found subscription " + $sub.PSChildname)
   $SubProp = ($sub | Get-ItemProperty)
   Write-Diag ("[INFO]   SubscriptionType = " + $SubProp.SubscriptionType + ", ConfigurationMode = " + $SubProp.ConfigurationMode)
+  Write-Diag ("[INFO]   MaxLatencyTime = " + (GetSubVal $sub.PSChildname "MaxLatencyTime") + ", HeartBeatInterval = " + (GetSubVal $sub.PSChildname "HeartBeatInterval"))
 
   if ($SubProp.Locale) {
     if ($SubProp.Locale -eq "en-US") {
