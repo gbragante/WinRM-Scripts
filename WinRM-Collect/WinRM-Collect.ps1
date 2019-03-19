@@ -1,5 +1,5 @@
-$version = "WinRM-Collect (20190226)"
-$DiagVersion = "WinRM-Diag (20190226)"
+$version = "WinRM-Collect (20190319)"
+$DiagVersion = "WinRM-Diag (20190308)"
 
 # by Gianni Bragante - gbrag@microsoft.com
 
@@ -187,6 +187,18 @@ Function ChkCert($cert, $store, $descr) {
   }
 }
 
+Function GetSubVal {
+  param( [string]$SubName, [string]$SubValue)
+  $SubProp = (Get-Item -Path ("HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector\Subscriptions\" + $SubName) | Get-ItemProperty)
+  if ($SubProp.($SubValue)) {
+    return $SubProp.($SubValue)
+  } else {
+    $cm = $SubProp.ConfigurationMode
+    $subVal = (Get-Item -Path ("HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector\ConfigurationModes\" + $cm) | Get-ItemProperty)
+    return $SubVal.($SubValue)
+  }
+}
+
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 $myWindowsPrincipal = new-object System.Security.Principal.WindowsPrincipal($myWindowsID)
 $adminRole = [System.Security.Principal.WindowsBuiltInRole]::Administrator
@@ -283,25 +295,27 @@ if ($proc) {
   }
 }
 
-Write-Log "Retrieving subscriptions configuration"
-$cmd = "wecutil es 2>>""" + $errfile + """"
-Write-log $cmd
-$subList = Invoke-Expression $cmd
+if (Get-ChildItem -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector\Subscriptions) {
+  Write-Log "Retrieving subscriptions configuration"
+  $cmd = "wecutil es 2>>""" + $errfile + """"
+  Write-log $cmd
+  $subList = Invoke-Expression $cmd
 
-if ($subList -gt "") {
-  foreach($sub in $subList) {
-    Write-Log "Subsription: " + $sub
-    ("Subsription: " + $sub) | out-file -FilePath ($resDir + "\Subscriptions.txt") -Append
-    "-----------------------" | out-file -FilePath ($resDir + "\Subscriptions.txt") -Append
-    $cmd = "wecutil gs """ + $sub + """ /f:xml" + $RdrErr
-    Write-Log $cmd
-    Invoke-Expression ($cmd) | out-file -FilePath ($resDir + "\Subscriptions.txt") -Append
+  if ($subList -gt "") {
+    foreach($sub in $subList) {
+      Write-Log "Subsription: " + $sub
+      ("Subsription: " + $sub) | out-file -FilePath ($resDir + "\Subscriptions.txt") -Append
+      "-----------------------" | out-file -FilePath ($resDir + "\Subscriptions.txt") -Append
+      $cmd = "wecutil gs """ + $sub + """ /f:xml" + $RdrErr
+      Write-Log $cmd
+      Invoke-Expression ($cmd) | out-file -FilePath ($resDir + "\Subscriptions.txt") -Append
 
-    $cmd = "wecutil gr """ + $sub + """" + $RdrErr
-    Write-Log $cmd
-    Invoke-Expression ($cmd) | out-file -FilePath ($resDir + "\Subscriptions.txt") -Append
+      $cmd = "wecutil gr """ + $sub + """" + $RdrErr
+      Write-Log $cmd
+      Invoke-Expression ($cmd) | out-file -FilePath ($resDir + "\Subscriptions.txt") -Append
 
-    " " | out-file -FilePath ($resDir + "\Subscriptions.txt") -Append
+      " " | out-file -FilePath ($resDir + "\Subscriptions.txt") -Append
+    }
   }
 }
 
@@ -791,6 +805,7 @@ foreach ($sub in $Subscriptions) {
   Write-Diag ("[INFO] Found subscription " + $sub.PSChildname)
   $SubProp = ($sub | Get-ItemProperty)
   Write-Diag ("[INFO]   SubscriptionType = " + $SubProp.SubscriptionType + ", ConfigurationMode = " + $SubProp.ConfigurationMode)
+  Write-Diag ("[INFO]   MaxLatencyTime = " + (GetSubVal $sub.PSChildname "MaxLatencyTime") + ", HeartBeatInterval = " + (GetSubVal $sub.PSChildname "HeartBeatInterval"))
 
   if ($SubProp.Locale) {
     if ($SubProp.Locale -eq "en-US") {
