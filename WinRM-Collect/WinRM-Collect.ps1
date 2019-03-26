@@ -1,4 +1,4 @@
-$version = "WinRM-Collect (20190319)"
+$version = "WinRM-Collect (20190326)"
 $DiagVersion = "WinRM-Diag (20190308)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -294,6 +294,12 @@ if ($proc) {
     }
   }
 }
+
+Write-Log "Collecting dump of the svchost process hosting the EventLog service"
+$cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma EventLog """ + $resDir + "\Svchost.exe-EventLog.dmp""" + $RdrOut + $RdrErr
+Write-Log $cmd
+Invoke-Expression $cmd
+
 
 if (Get-ChildItem -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector\Subscriptions) {
   Write-Log "Retrieving subscriptions configuration"
