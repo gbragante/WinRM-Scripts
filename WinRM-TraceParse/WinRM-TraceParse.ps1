@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20190103
+# Version 20190423
 
 param (
   [string]$InputFile
@@ -304,7 +304,7 @@ while (-not $sr.EndOfStream) {
     Write-Host $lines $thread $time $To $row.Action
 
     }
-  } elseif ($line -match  "Microsoft-Windows-CAPI2/Operational") {
+  } elseif (($line -match  "Microsoft-Windows-CAPI2/Operational") -and -not ($line -match "SOAP \[")) {
     $npos=$line.IndexOf("::")
     $time = ($line.Substring($nPos + 2 , 25))
     $timeFile = $time.Substring(9).Replace(":","").Replace(".","-")
