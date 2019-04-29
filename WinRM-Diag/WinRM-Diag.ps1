@@ -1,4 +1,4 @@
-$DiagVersion = "WinRM-Diag (20190308)"
+$DiagVersion = "WinRM-Diag (20190429)"
 # by Gianni Bragante gbrag@microsoft.com
 
 Function FindSep {
@@ -352,11 +352,12 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
   if ($results.count -gt 0) {
     foreach ($result in $results) {
       Write-Diag ("[INFO] The SPN HTTP/$env:COMPUTERNAME is registered for DNS name = " + $result.properties.dnshostname + ", DN = " + $result.properties.distinguishedname + ", Category = " + $result.properties.objectcategory)
-      if (-not $result.properties.objectcategory[0].Contains("Computer")) {
+      if ($result.properties.objectcategory[0].Contains("Computer")) {
+        if (-not $result.properties.dnshostname[0].Contains($env:COMPUTERNAME)) {
+          Write-Diag ("[ERROR] The The SPN HTTP/$env:COMPUTERNAME is registered for different DNS host name: " + $result.properties.dnshostname[0])
+        }
+      } else {
         Write-Diag "[ERROR] The The SPN HTTP/$env:COMPUTERNAME is NOT registered for a computer account"
-      }
-      if (-not $result.properties.dnshostname[0].Contains($env:COMPUTERNAME)) {
-        Write-Diag ("[ERROR] The The SPN HTTP/$env:COMPUTERNAME is registered for different DNS host name: " + $result.properties.dnshostname[0])
       }
     }
     if ($results.count -gt 1) {
