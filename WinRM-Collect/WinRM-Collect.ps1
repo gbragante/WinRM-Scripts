@@ -1,5 +1,5 @@
-$version = "WinRM-Collect (20190326)"
-$DiagVersion = "WinRM-Diag (20190308)"
+$version = "WinRM-Collect (20190503)"
+$DiagVersion = "WinRM-Diag (20190429)"
 
 # by Gianni Bragante - gbrag@microsoft.com
 
@@ -207,6 +207,24 @@ if (-not $myWindowsPrincipal.IsInRole($adminRole)) {
   exit
 }
 
+Function FileVersion {
+  param(
+    [string] $FilePath,
+    [bool] $Log = $false
+  )
+  if (Test-Path -Path $FilePath) {
+    $fileobj = Get-item $FilePath
+    $filever = $fileobj.VersionInfo.FileMajorPart.ToString() + "." + $fileobj.VersionInfo.FileMinorPart.ToString() + "." + $fileobj.VersionInfo.FileBuildPart.ToString() + "." + $fileobj.VersionInfo.FilePrivatepart.ToString()
+
+    if ($log) {
+      ($FilePath + "," + $filever + "," + $fileobj.CreationTime.ToString("yyyyMMdd HH:mm:ss")) | Out-File -FilePath ($resDir + "\FilesVersion.csv") -Append
+    }
+    return $filever | Out-Null
+  } else {
+    return ""
+  }
+}
+
 $Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
 
 $resName = "WinRM-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
@@ -295,11 +313,7 @@ if ($proc) {
   }
 }
 
-Write-Log "Collecting dump of the svchost process hosting the EventLog service"
-$cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma EventLog """ + $resDir + "\Svchost.exe-EventLog.dmp""" + $RdrOut + $RdrErr
-Write-Log $cmd
-Invoke-Expression $cmd
-
+FileVersion -Filepath ($env:windir + "\system32\wsmsvc.dll") -Log $true
 
 if (Get-ChildItem -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector\Subscriptions) {
   Write-Log "Retrieving subscriptions configuration"
@@ -448,10 +462,14 @@ $cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\
 Write-Log $cmd
 Invoke-Expression $cmd
 
-Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\WinRM"
-$cmd = "reg export HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\WinRM """+ $resDir + "\WinRM-Pol.reg.txt"" /y" + $RdrOut + $RdrErr
-Write-Log $cmd
-Invoke-Expression $cmd
+if (Test-Path HKLM:\Software\Policies\Microsoft\Windows\WinRM) {
+  Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\WinRM"
+  $cmd = "reg export HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\WinRM """+ $resDir + "\WinRM-Pol.reg.txt"" /y" + $RdrOut + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression $cmd
+} else {
+  Write-Log "The registry key HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\WinRM is not present"
+}
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector"
 $cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector """+ $resDir + "\EventCollector.reg.txt"" /y" + $RdrOut + $RdrErr
@@ -493,10 +511,14 @@ $cmd = "reg export HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\HTTP """
 Write-Log $cmd
 Invoke-Expression $cmd
 
-Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowFreshCredentials"
-$cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowFreshCredentials """+ $resDir + "\AllowFreshCredentials.reg.txt"" /y" + $RdrOut + $RdrErr
-Write-Log $cmd
-Invoke-Expression $cmd
+if (Test-Path HKLM:\SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowFreshCredentials) {
+  Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowFreshCredentials"
+  $cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowFreshCredentials """+ $resDir + "\AllowFreshCredentials.reg.txt"" /y" + $RdrOut + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression $cmd
+} else {
+  Write-Log "The registry key HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowFreshCredentials is not present"
+}
 
 Write-Log "Exporting System log"
 $cmd = "wevtutil epl System """+ $resDir + "\" + $env:computername + "-System.evtx""" + $RdrOut + $RdrErr
@@ -612,6 +634,39 @@ $cmd = "netsh http show iplisten >>""" + $resDir + "\netsh-http.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
+if (Test-Path HKLM:\SOFTWARE\Microsoft\InetStp) {
+  Write-Log "Exporting IIS configuration"
+  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list app >>""" + $resDir + "\iisconfig.txt""" + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression $cmd
+
+  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list apppool >>""" + $resDir + "\iisconfig.txt""" + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression $cmd
+
+  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list site >>""" + $resDir + "\iisconfig.txt""" + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression $cmd
+
+  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list module >>""" + $resDir + "\iisconfig.txt""" + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression $cmd
+
+  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list wp >>""" + $resDir + "\iisconfig.txt""" + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression $cmd
+
+  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list vdir >>""" + $resDir + "\iisconfig.txt""" + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression $cmd
+
+  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list config >>""" + $resDir + "\iisconfig.txt""" + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression $cmd
+} else { 
+  Write-Log "IIS is not installed"
+}
+
 $cmd = "setspn -L " + $env:computername + " >>""" + $resDir + "\SPN.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
@@ -711,7 +766,7 @@ Write-Log "Collecting the list of installed hotfixes"
 Get-HotFix -ErrorAction SilentlyContinue 2>>$errfile | Sort-Object -Property InstalledOn -ErrorAction SilentlyContinue | Out-File $resDir\hotfixes.txt
 
 Write-Log "Collecting details about running processes"
-$proc = ExecQuery -Namespace "root\cimv2" -Query "select Name, CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine from Win32_Process"
+$proc = ExecQuery -Namespace "root\cimv2" -Query "select Name, CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine, ExecutablePath from Win32_Process"
 if ($PSVersionTable.psversion.ToString() -ge "3.0") {
   $StartTime= @{e={$_.CreationDate.ToString("yyyyMMdd HH:mm:ss")};n="Start time"}
 } else {
@@ -725,6 +780,14 @@ if ($proc) {
   @{e={[DateTime]::FromFileTimeUtc($_.UserModeTime).ToString("HH:mm:ss")};n="UserTime"}, @{e={[DateTime]::FromFileTimeUtc($_.KernelModeTime).ToString("HH:mm:ss")};n="KernelTime"},
   @{N="Threads";E={$_.ThreadCount}}, @{N="Handles";E={($_.HandleCount)}}, $StartTime, CommandLine |
   Out-String -Width 500 | Out-File -FilePath ($resDir + "\processes.txt")
+
+  Write-Log "Retrieving file version of running binaries"
+  $binlist = $proc | Group-Object -Property ExecutablePath
+  foreach ($file in $binlist) {
+    if ($file.Name) {
+      FileVersion -Filepath ($file.name) -Log $true
+    }
+  }
 
   Write-Log "Collecting services details"
   $svc = ExecQuery -NameSpace "root\cimv2" -Query "select  ProcessId, DisplayName, StartMode,State, Name, PathName, StartName from Win32_Service"
@@ -1008,11 +1071,12 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
   if ($results.count -gt 0) {
     foreach ($result in $results) {
       Write-Diag ("[INFO] The SPN HTTP/$env:COMPUTERNAME is registered for DNS name = " + $result.properties.dnshostname + ", DN = " + $result.properties.distinguishedname + ", Category = " + $result.properties.objectcategory)
-      if (-not $result.properties.objectcategory[0].Contains("Computer")) {
+      if ($result.properties.objectcategory[0].Contains("Computer")) {
+        if (-not $result.properties.dnshostname[0].Contains($env:COMPUTERNAME)) {
+          Write-Diag ("[ERROR] The The SPN HTTP/$env:COMPUTERNAME is registered for different DNS host name: " + $result.properties.dnshostname[0])
+        }
+      } else {
         Write-Diag "[ERROR] The The SPN HTTP/$env:COMPUTERNAME is NOT registered for a computer account"
-      }
-      if (-not $result.properties.dnshostname[0].Contains($env:COMPUTERNAME)) {
-        Write-Diag ("[ERROR] The The SPN HTTP/$env:COMPUTERNAME is registered for different DNS host name: " + $result.properties.dnshostname[0])
       }
     }
     if ($results.count -gt 1) {
