@@ -1,4 +1,4 @@
-$version = "WinRM-Collect (20190503)"
+$version = "WinRM-Collect (20190515)"
 $DiagVersion = "WinRM-Diag (20190429)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -362,6 +362,12 @@ $group = $objSID.Translate( [System.Security.Principal.NTAccount]).Value
 Write-Log "Get-Culture output"
 "Get-Culture" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
 Get-Culture | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+
+reg export "HKEY_USERS\S-1-5-20\Control Panel\International"
+Write-Log "Exporting registry key HKEY_USERS\S-1-5-20\Control Panel\International"
+$cmd = "reg export ""HKEY_USERS\S-1-5-20\Control Panel\International"" """ + $resDir + "\InternationalNetworkService.reg.txt"" /y " + $RdrOut + $RdrErr
+Write-Log $cmd
+Invoke-Expression $cmd
 
 Write-Log "Get-WinSystemLocale output"
 "Get-WinSystemLocale" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
