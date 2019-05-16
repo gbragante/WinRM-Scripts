@@ -1,4 +1,4 @@
-$version = "WinRM-Collect (20190515)"
+$version = "WinRM-Collect (20190516)"
 $DiagVersion = "WinRM-Diag (20190429)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -470,12 +470,17 @@ Invoke-Expression $cmd
 
 if (Test-Path HKLM:\Software\Policies\Microsoft\Windows\WinRM) {
   Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\WinRM"
-  $cmd = "reg export HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\WinRM """+ $resDir + "\WinRM-Pol.reg.txt"" /y" + $RdrOut + $RdrErr
+  $cmd = "reg export HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\WinRM """+ $resDir + "\WinRM-Policies.reg.txt"" /y" + $RdrOut + $RdrErr
   Write-Log $cmd
   Invoke-Expression $cmd
 } else {
   Write-Log "The registry key HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\WinRM is not present"
 }
+
+Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+$cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System """+ $resDir + "\System-Policies.reg.txt"" /y" + $RdrOut + $RdrErr
+Write-Log $cmd
+Invoke-Expression $cmd
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector"
 $cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector """+ $resDir + "\EventCollector.reg.txt"" /y" + $RdrOut + $RdrErr
