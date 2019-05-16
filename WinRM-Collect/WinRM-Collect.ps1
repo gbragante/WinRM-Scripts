@@ -41,6 +41,11 @@ Function EvtLogDetails {
   Write-Log $cmd
   Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
+  Write-Log ("Collecting the details for the " + $LogName + " log")
+  $cmd = "wevtutil gli " + $logname + " >>""" + $resDir + "\EventLogs.txt""" + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+
   "" | Out-File -FilePath ($resDir + "\EventLogs.txt") -Append
 
   if ($logname -ne "ForwardedEvents") {
