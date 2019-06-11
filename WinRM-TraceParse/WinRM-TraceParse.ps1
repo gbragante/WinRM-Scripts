@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20190423
+# Version 20190604
 
 param (
   [string]$InputFile
@@ -49,6 +49,7 @@ $col = New-Object system.Data.DataColumn OperationTimeout,([string]); $tbEvt.Col
 $col = New-Object system.Data.DataColumn MessageID,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn RelatesTo,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn FileName,([string]); $tbEvt.Columns.Add($col)
+$col = New-Object system.Data.DataColumn FileSize,([string]); $tbEvt.Columns.Add($col)
 
 $tbCAPI = New-Object system.Data.DataTable
 $col = New-Object system.Data.DataColumn Time,([string]); $tbCAPI.Columns.Add($col)
@@ -137,7 +138,7 @@ while (-not $sr.EndOfStream) {
     if ($xmlLine[$thread].Substring($xmlLine[$thread].Length-13) -eq "</s:Envelope>") {
       $filename = "out-" + $timeFile + "-" + $msgtype + ".xml"
       $xmlLine[$thread] | Out-File -FilePath ($dirName + "\" + $FileName) 
-      
+            
       $xmlEvt = New-Object -TypeName System.Xml.XmlDocument
       $xmlPL = New-Object -TypeName System.Xml.XmlDocument
 
@@ -147,6 +148,7 @@ while (-not $sr.EndOfStream) {
       $row = $tbEvt.NewRow()
       $row.Time = $time
       $row.Type = $msgtype
+      $row.FileSize = (Get-Item ($dirName + "\" + $FileName)).Length
       
       $row.Message = $xmlEvt.Envelope.Body.FirstChild.LocalName
       if ($row.Message -eq "Fault") {
@@ -198,18 +200,22 @@ while (-not $sr.EndOfStream) {
           }
         } elseif ($xmlEvt.Envelope.body.EnumerateResponse.Items.FirstChild.Name -eq "w:Item") {
           $row.Items = $xmlEvt.Envelope.body.EnumerateResponse.Items.ChildNodes.Count
-      }
-    } elseif ($row.Message -eq "CommandLine") {
-      $row.Command = $xmlEvt.Envelope.body.CommandLine.Command
-    } elseif ($xmlEvt.Envelope.Header.ResourceURI.'#text') {
-      if ($xmlEvt.Envelope.Header.ResourceURI.'#text'.IndexOf("cim-schema") -gt 0) {
-        $cmdWMI = ""
-        foreach ($sel in $xmlEvt.Envelope.Header.SelectorSet.Selector) {
-          $cmdWMI = $cmdWMI + $sel.'#text' + " "
         }
-        $row.Command = $cmdWMI
+      } elseif ($row.Message -eq "Enumerate") {
+        $Computer = $xmlEvt.Envelope.Header.MachineID.'#text'
+
+      } elseif ($row.Message -eq "CommandLine") {
+        $row.Command = $xmlEvt.Envelope.body.CommandLine.Command
+
+      } elseif ($xmlEvt.Envelope.Header.ResourceURI.'#text') {
+        if ($xmlEvt.Envelope.Header.ResourceURI.'#text'.IndexOf("cim-schema") -gt 0) {
+          $cmdWMI = ""
+          foreach ($sel in $xmlEvt.Envelope.Header.SelectorSet.Selector) {
+            $cmdWMI = $cmdWMI + $sel.'#text' + " "
+          }
+          $row.Command = $cmdWMI
+        }
       }
-    }
     
     if ($xmlEvt.Envelope.Header.Action.HasAttributes) {
       $row.Action = $xmlEvt.Envelope.Header.Action.'#text'
