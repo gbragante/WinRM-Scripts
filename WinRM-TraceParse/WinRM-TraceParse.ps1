@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20190604
+# Version 20190913 
 
 param (
   [string]$InputFile
@@ -36,6 +36,7 @@ $col = New-Object system.Data.DataColumn To,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Action,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Message,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Command,([string]); $tbEvt.Columns.Add($col)
+$col = New-Object system.Data.DataColumn RetObj,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Bookmarks,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Items,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Dates,([string]); $tbEvt.Columns.Add($col)
@@ -203,7 +204,12 @@ while (-not $sr.EndOfStream) {
         }
       } elseif ($row.Message -eq "Enumerate") {
         $Computer = $xmlEvt.Envelope.Header.MachineID.'#text'
-
+        $row.Command = $xmlevt.Envelope.Header.SelectorSet.Selector.'#text'
+      } elseif ($row.Message -eq "Pull") {
+        $row.Command = $xmlevt.Envelope.Header.SelectorSet.Selector.'#text'
+      } elseif ($row.Message -eq "PullResponse") {
+        $row.RetObj = $xmlEvt.Envelope.Body.PullResponse.Items.FirstChild.FirstChild.name
+        $row.Items = $xmlEvt.Envelope.body.PullResponse.Items.ChildNodes.Count
       } elseif ($row.Message -eq "CommandLine") {
         $row.Command = $xmlEvt.Envelope.body.CommandLine.Command
 
@@ -292,6 +298,7 @@ while (-not $sr.EndOfStream) {
       $ActID = $aRel[0].ActivityID
       $OpId = $aRel[0].OperationID
       $computer = $aRel[0].Computer
+      $row.Command = $aRel[0].Command
     }
 
     $row.To = $To
