@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20190913 
+# Version 20190918
 
 param (
   [string]$InputFile
@@ -41,6 +41,7 @@ $col = New-Object system.Data.DataColumn Bookmarks,([string]); $tbEvt.Columns.Ad
 $col = New-Object system.Data.DataColumn Items,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Dates,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Computer,([string]); $tbEvt.Columns.Add($col)
+$col = New-Object system.Data.DataColumn EnumerationContext,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn SessionID,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn ShellID,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn CommandID,([string]); $tbEvt.Columns.Add($col)
@@ -202,14 +203,23 @@ while (-not $sr.EndOfStream) {
         } elseif ($xmlEvt.Envelope.body.EnumerateResponse.Items.FirstChild.Name -eq "w:Item") {
           $row.Items = $xmlEvt.Envelope.body.EnumerateResponse.Items.ChildNodes.Count
         }
+        if ($xmlEvt.Envelope.Body.EnumerateResponse.EnumerationContext) {
+          $row.EnumerationContext = $xmlEvt.Envelope.Body.EnumerateResponse.EnumerationContext.substring(5) 
+        }
       } elseif ($row.Message -eq "Enumerate") {
         $Computer = $xmlEvt.Envelope.Header.MachineID.'#text'
-        $row.Command = $xmlevt.Envelope.Header.SelectorSet.Selector.'#text'
+        $row.Command = $xmlevt.Envelope.Header.SelectorSet.Selector.'#text' + " " +  $xmlEvt.Envelope.Body.Enumerate.Filter.'#text'
       } elseif ($row.Message -eq "Pull") {
         $row.Command = $xmlevt.Envelope.Header.SelectorSet.Selector.'#text'
+        if ($xmlEvt.Envelope.Body.Pull.EnumerationContext.'#text') {
+          $row.EnumerationContext = $xmlEvt.Envelope.Body.Pull.EnumerationContext.'#text'.Substring(5)
+        }
       } elseif ($row.Message -eq "PullResponse") {
         $row.RetObj = $xmlEvt.Envelope.Body.PullResponse.Items.FirstChild.FirstChild.name
         $row.Items = $xmlEvt.Envelope.body.PullResponse.Items.ChildNodes.Count
+        if ($xmlEvt.Envelope.Body.PullResponse.EnumerationContext) {
+          $row.EnumerationContext = $xmlEvt.Envelope.Body.PullResponse.EnumerationContext.Substring(5)
+        }
       } elseif ($row.Message -eq "CommandLine") {
         $row.Command = $xmlEvt.Envelope.body.CommandLine.Command
 
@@ -299,6 +309,9 @@ while (-not $sr.EndOfStream) {
       $OpId = $aRel[0].OperationID
       $computer = $aRel[0].Computer
       $row.Command = $aRel[0].Command
+      if (-not $row.EnumerationContext) {
+        $row.EnumerationContext = $aRel[0].EnumerationContext
+      }
     }
 
     $row.To = $To
