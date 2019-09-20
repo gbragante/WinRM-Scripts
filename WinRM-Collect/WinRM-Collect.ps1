@@ -1,4 +1,4 @@
-$version = "WinRM-Collect (20190516)"
+$version = "WinRM-Collect (20190920)"
 $DiagVersion = "WinRM-Diag (20190429)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -71,6 +71,8 @@ Function Win10Ver {
     return " (RS4 / 1803)"
   } elseif ($build -eq 17763) {
     return " (RS5 / 1809)"
+  } elseif ($build -eq 18362) {
+    return " (19H1 / 1903)"
   }
 }
 
@@ -317,6 +319,11 @@ if ($proc) {
     }
   }
 }
+
+Write-Log "Collecting dump of the SME.exe process"
+$cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma SME.exe """ + $resDir + "\SME.dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
+Write-Log $cmd
+Invoke-Expression $cmd
 
 FileVersion -Filepath ($env:windir + "\system32\wsmsvc.dll") -Log $true
 
@@ -809,7 +816,7 @@ if ($proc) {
   $svc = ExecQuery -NameSpace "root\cimv2" -Query "select  ProcessId, DisplayName, StartMode,State, Name, PathName, StartName from Win32_Service"
 
   if ($svc) {
-    $svc | Sort-Object DisplayName | Format-Table -AutoSize -Property ProcessId, DisplayName, StartMode,State, Name, PathName, StartName |
+    $svc | Sort-Object DisplayName | Format-Table -AutoSize -Property ProcessId, DisplayName, Name, State, StartMode, StartName, PathName |
     Out-String -Width 400 | Out-File -FilePath ($resDir + "\services.txt")
   }
 
