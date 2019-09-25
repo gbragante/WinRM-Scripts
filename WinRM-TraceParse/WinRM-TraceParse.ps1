@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20190918
+# Version 20190925
 
 param (
   [string]$InputFile
@@ -144,7 +144,13 @@ while (-not $sr.EndOfStream) {
       $xmlEvt = New-Object -TypeName System.Xml.XmlDocument
       $xmlPL = New-Object -TypeName System.Xml.XmlDocument
 
-      $xmlEvt.LoadXml($xmlLine[$thread]) 
+      try {
+        $xmlEvt.LoadXml($xmlLine[$thread])         
+      }
+      catch {
+        Write-Error $PSItem.Exception 
+        Write-Error $xmlLine.Values
+      }
       $xmlLine.Remove($thread)
 
       $row = $tbEvt.NewRow()
