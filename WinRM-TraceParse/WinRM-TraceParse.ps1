@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20190925
+# Version 20190926
 
 param (
   [string]$InputFile
@@ -18,6 +18,11 @@ Function Write-Error {
   $msg | Out-File -FilePath ($dirName + "\script-errors.txt") -Append
 }
 
+Function ToTime{
+  param( [string]$time)
+  return Get-Date -Year $time.Substring(6,2) -Month $time.Substring(0,2) -Day $time.Substring(3,2) -Hour $time.Substring(9,2) -Minute $time.Substring(12,2) -Second $time.Substring(15,2) -Millisecond $time.Substring(18,3)
+}
+
 if ($InputFile -eq "") {
   Write-Host "Trace filename not specified"
   exit
@@ -31,6 +36,7 @@ New-Item -itemtype directory -path $dirname | Out-Null
 
 $tbEvt = New-Object system.Data.DataTable
 $col = New-Object system.Data.DataColumn Time,([string]); $tbEvt.Columns.Add($col)
+$col = New-Object system.Data.DataColumn PID,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Type,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn To,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Action,([string]); $tbEvt.Columns.Add($col)
@@ -155,6 +161,7 @@ while (-not $sr.EndOfStream) {
 
       $row = $tbEvt.NewRow()
       $row.Time = $time
+      $row.Pid = [int32]("0x" + $thread.Substring(0,$thread.IndexOf(".")))
       $row.Type = $msgtype
       $row.FileSize = (Get-Item ($dirName + "\" + $FileName)).Length
       
@@ -318,6 +325,13 @@ while (-not $sr.EndOfStream) {
       if (-not $row.EnumerationContext) {
         $row.EnumerationContext = $aRel[0].EnumerationContext
       }
+      if ($aRel) {
+        write-host ToTime $aRel[0].Time
+        $duration = New-TimeSpan -Start (ToTime $aRel[0].Time) -End (ToTime $time)
+        $row.OperationTimeout = $duration.TotalMilliseconds
+      }
+    } else {
+      $row.OperationTimeout = $xmlEvt.Envelope.Header.OperationTimeout
     }
 
     $row.To = $To
@@ -329,9 +343,7 @@ while (-not $sr.EndOfStream) {
     $row.CommandID = $cmdID
     $row.ActivityID = $ActId
     $row.OperationID = $OpId
-    $row.OperationTimeout = $xmlEvt.Envelope.Header.OperationTimeout
     $row.FileName = $FileName
-
     $tbEvt.Rows.Add($row)
     Write-Host $lines $thread $time $To $row.Action
 
