@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20190926
+# Version 20191001
 
 param (
   [string]$InputFile
@@ -47,13 +47,13 @@ $col = New-Object system.Data.DataColumn Bookmarks,([string]); $tbEvt.Columns.Ad
 $col = New-Object system.Data.DataColumn Items,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Dates,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Computer,([string]); $tbEvt.Columns.Add($col)
+$col = New-Object system.Data.DataColumn OperationTimeout,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn EnumerationContext,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn SessionID,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn ShellID,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn CommandID,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn ActivityID,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn OperationID,([string]); $tbEvt.Columns.Add($col)
-$col = New-Object system.Data.DataColumn OperationTimeout,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn MessageID,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn RelatesTo,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn FileName,([string]); $tbEvt.Columns.Add($col)
@@ -130,7 +130,7 @@ while (-not $sr.EndOfStream) {
     $line = $sr.ReadLine()
     $lines = $lines + 1
 
-    while (1 -eq 1) {
+    while (-not $sr.EndOfStream) {
       if ($line.Length -gt 1) {
         if ($line.Substring(0,1) -eq "[") { break }
         if ($line.Substring($line.Length-1, 1) -eq " ") {
@@ -326,7 +326,6 @@ while (-not $sr.EndOfStream) {
         $row.EnumerationContext = $aRel[0].EnumerationContext
       }
       if ($aRel) {
-        write-host ToTime $aRel[0].Time
         $duration = New-TimeSpan -Start (ToTime $aRel[0].Time) -End (ToTime $time)
         $row.OperationTimeout = $duration.TotalMilliseconds
       }
@@ -402,7 +401,10 @@ while (-not $sr.EndOfStream) {
 
 $sr.Close()
 
+Write-Host "Exporting WinRM events to tsv"
 $tbEvt | Export-Csv ($dirName + "\events-" + (Get-Item $InputFile).BaseName +".tsv") -noType -Delimiter "`t"
+
+Write-Host "Exporting CAPI events to tsv"
 $tbCAPI | Export-Csv ($dirName + "\CAPI-" + (Get-Item $InputFile).BaseName +".tsv") -noType -Delimiter "`t"
 
 $duration = New-TimeSpan -Start $dtStart -End (Get-Date)
