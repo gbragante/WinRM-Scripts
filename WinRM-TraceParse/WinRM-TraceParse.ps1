@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20191001
+# Version 20191008
 
 param (
   [string]$InputFile
@@ -132,7 +132,8 @@ while (-not $sr.EndOfStream) {
 
     while (-not $sr.EndOfStream) {
       if ($line.Length -gt 1) {
-        if ($line.Substring(0,1) -eq "[") { break }
+        #if ($line.Substring(0,1) -eq "[") { break }
+        if (($line.Length -gt 25) -and ($line.Substring(0,25) -match "[A-Fa-f0-9]{4,5}.[A-Fa-f0-9]{4,5}::\d\d/")) { break }
         if ($line.Substring($line.Length-1, 1) -eq " ") {
           $line=$line.Substring(0, $line.Length-1)
         }
