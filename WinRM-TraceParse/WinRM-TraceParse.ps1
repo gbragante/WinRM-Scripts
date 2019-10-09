@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20191008
+# Version 20191009
 
 param (
   [string]$InputFile
@@ -224,9 +224,13 @@ while (-not $sr.EndOfStream) {
         $Computer = $xmlEvt.Envelope.Header.MachineID.'#text'
         $row.Command = $xmlevt.Envelope.Header.SelectorSet.Selector.'#text' + " " +  $xmlEvt.Envelope.Body.Enumerate.Filter.'#text'
       } elseif ($row.Message -eq "Pull") {
-        $row.Command = $xmlevt.Envelope.Header.SelectorSet.Selector.'#text'
-        if ($xmlEvt.Envelope.Body.Pull.EnumerationContext.'#text') {
-          $row.EnumerationContext = $xmlEvt.Envelope.Body.Pull.EnumerationContext.'#text'.Substring(5)
+        if ($row.Command = $xmlEvt.Envelope.Header.OptionSet.FirstChild.'#text') {
+          $row.Command = $xmlEvt.Envelope.Header.OptionSet.FirstChild.'#text'
+        } else {
+          $row.Command = $xmlevt.Envelope.Header.SelectorSet.Selector.'#text'
+          if ($xmlEvt.Envelope.Body.Pull.EnumerationContext.'#text') {
+            $row.EnumerationContext = $xmlEvt.Envelope.Body.Pull.EnumerationContext.'#text'.Substring(5)
+          }
         }
       } elseif ($row.Message -eq "PullResponse") {
         $row.RetObj = $xmlEvt.Envelope.Body.PullResponse.Items.FirstChild.FirstChild.name
@@ -236,7 +240,11 @@ while (-not $sr.EndOfStream) {
         }
       } elseif ($row.Message -eq "CommandLine") {
         $row.Command = $xmlEvt.Envelope.body.CommandLine.Command
-
+      } elseif ($row.Message -eq "Unsubscribe") {
+        $row.Command = $xmlEvt.Envelope.Header.OptionSet.FirstChild.'#text'
+      } elseif ($row.Message -eq "Subscribe") {
+        $row.Command = $xmlEvt.Envelope.Header.OptionSet.FirstChild.'#text'
+        # maybe also add the subscription details here
       } elseif ($xmlEvt.Envelope.Header.ResourceURI.'#text') {
         if ($xmlEvt.Envelope.Header.ResourceURI.'#text'.IndexOf("cim-schema") -gt 0) {
           $cmdWMI = ""
