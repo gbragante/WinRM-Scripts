@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20191009
+# Version 20191011
 
 param (
   [string]$InputFile
@@ -224,14 +224,14 @@ while (-not $sr.EndOfStream) {
         $Computer = $xmlEvt.Envelope.Header.MachineID.'#text'
         $row.Command = $xmlevt.Envelope.Header.SelectorSet.Selector.'#text' + " " +  $xmlEvt.Envelope.Body.Enumerate.Filter.'#text'
       } elseif ($row.Message -eq "Pull") {
-        if ($row.Command = $xmlEvt.Envelope.Header.OptionSet.FirstChild.'#text') {
-          $row.Command = $xmlEvt.Envelope.Header.OptionSet.FirstChild.'#text'
-        } else {
+        if ($xmlEvt.Envelope.Header.SelectorSet.Selector.Name -eq "__cimnamespace") {
           $row.Command = $xmlevt.Envelope.Header.SelectorSet.Selector.'#text'
           if ($xmlEvt.Envelope.Body.Pull.EnumerationContext.'#text') {
             $row.EnumerationContext = $xmlEvt.Envelope.Body.Pull.EnumerationContext.'#text'.Substring(5)
           }
-        }
+        } elseif ($row.Command = $xmlEvt.Envelope.Header.OptionSet.FirstChild.'#text') {
+          $row.Command = $xmlEvt.Envelope.Header.OptionSet.FirstChild.'#text'
+        } 
       } elseif ($row.Message -eq "PullResponse") {
         $row.RetObj = $xmlEvt.Envelope.Body.PullResponse.Items.FirstChild.FirstChild.name
         $row.Items = $xmlEvt.Envelope.body.PullResponse.Items.ChildNodes.Count
