@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20191011
+# Version 20191128
 
 param (
   [string]$InputFile
@@ -132,7 +132,6 @@ while (-not $sr.EndOfStream) {
 
     while (-not $sr.EndOfStream) {
       if ($line.Length -gt 1) {
-        #if ($line.Substring(0,1) -eq "[") { break }
         if (($line.Length -gt 25) -and ($line.Substring(0,25) -match "[A-Fa-f0-9]{4,5}.[A-Fa-f0-9]{4,5}::\d\d/")) { break }
         if ($line.Substring($line.Length-1, 1) -eq " ") {
           $line=$line.Substring(0, $line.Length-1)
@@ -144,7 +143,8 @@ while (-not $sr.EndOfStream) {
     }
 
     # Closing tag detection
-    if ($xmlLine[$thread].Substring($xmlLine[$thread].Length-13) -eq "</s:Envelope>") {
+    #if ($xmlLine[$thread].Substring($xmlLine[$thread].Length-13) -eq "</s:Envelope>") {
+    if ($xmlLine[$thread] -match "</s:Envelope>") {
       $filename = "out-" + $timeFile + "-" + $msgtype + ".xml"
       $xmlLine[$thread] | Out-File -FilePath ($dirName + "\" + $FileName) 
             
