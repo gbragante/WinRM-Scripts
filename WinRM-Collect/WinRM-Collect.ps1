@@ -1,4 +1,4 @@
-$version = "WinRM-Collect (20190920)"
+$version = "WinRM-Collect (20191227)"
 $DiagVersion = "WinRM-Diag (20190429)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -206,12 +206,16 @@ Function GetSubVal {
   }
 }
 
-$myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-$myWindowsPrincipal = new-object System.Security.Principal.WindowsPrincipal($myWindowsID)
-$adminRole = [System.Security.Principal.WindowsBuiltInRole]::Administrator
-if (-not $myWindowsPrincipal.IsInRole($adminRole)) {
-  Write-Output "This script needs to be run as Administrator"
-  exit
+Function GetOwnerCim{
+  param( $prc )
+  $ret = Invoke-CimMethod -InputObject $prc -MethodName GetOwner
+  return ($ret.Domain + "\" + $ret.User)
+}
+
+Function GetOwnerWmi{
+  param( $prc )
+  $ret = $prc.GetOwner()
+  return ($ret.Domain + "\" + $ret.User)
 }
 
 Function FileVersion {
@@ -230,6 +234,14 @@ Function FileVersion {
   } else {
     return ""
   }
+}
+
+$myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+$myWindowsPrincipal = new-object System.Security.Principal.WindowsPrincipal($myWindowsID)
+$adminRole = [System.Security.Principal.WindowsBuiltInRole]::Administrator
+if (-not $myWindowsPrincipal.IsInRole($adminRole)) {
+  Write-Output "This script needs to be run as Administrator"
+  exit
 }
 
 $Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
@@ -789,11 +801,13 @@ Write-Log "Collecting the list of installed hotfixes"
 Get-HotFix -ErrorAction SilentlyContinue 2>>$errfile | Sort-Object -Property InstalledOn -ErrorAction SilentlyContinue | Out-File $resDir\hotfixes.txt
 
 Write-Log "Collecting details about running processes"
-$proc = ExecQuery -Namespace "root\cimv2" -Query "select Name, CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine, ExecutablePath from Win32_Process"
+$proc = ExecQuery -Namespace "root\cimv2" -Query "select Name, CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine, ExecutablePath, ExecutionState from Win32_Process"
 if ($PSVersionTable.psversion.ToString() -ge "3.0") {
   $StartTime= @{e={$_.CreationDate.ToString("yyyyMMdd HH:mm:ss")};n="Start time"}
+  $Owner = @{N="User";E={(GetOwnerCim($_))}}
 } else {
   $StartTime= @{n='StartTime';e={$_.ConvertToDateTime($_.CreationDate)}}
+  $Owner = @{N="User";E={(GetOwnerWmi($_))}}
 }
 
 if ($proc) {
@@ -801,7 +815,7 @@ if ($proc) {
   Format-Table -AutoSize -property @{e={$_.ProcessId};Label="PID"}, @{e={$_.ParentProcessId};n="Parent"}, Name,
   @{N="WorkingSet";E={"{0:N0}" -f ($_.WorkingSetSize/1kb)};a="right"},
   @{e={[DateTime]::FromFileTimeUtc($_.UserModeTime).ToString("HH:mm:ss")};n="UserTime"}, @{e={[DateTime]::FromFileTimeUtc($_.KernelModeTime).ToString("HH:mm:ss")};n="KernelTime"},
-  @{N="Threads";E={$_.ThreadCount}}, @{N="Handles";E={($_.HandleCount)}}, $StartTime, CommandLine |
+  @{N="Threads";E={$_.ThreadCount}}, @{N="Handles";E={($_.HandleCount)}}, @{N="State";E={($_.ExecutionState)}}, $StartTime, $Owner, CommandLine |
   Out-String -Width 500 | Out-File -FilePath ($resDir + "\processes.txt")
 
   Write-Log "Retrieving file version of running binaries"
@@ -816,13 +830,13 @@ if ($proc) {
   $svc = ExecQuery -NameSpace "root\cimv2" -Query "select  ProcessId, DisplayName, StartMode,State, Name, PathName, StartName from Win32_Service"
 
   if ($svc) {
-    $svc | Sort-Object DisplayName | Format-Table -AutoSize -Property ProcessId, DisplayName, Name, State, StartMode, StartName, PathName |
+    $svc | Sort-Object DisplayName | Format-Table -AutoSize -Property ProcessId, DisplayName, StartMode,State, Name, PathName, StartName |
     Out-String -Width 400 | Out-File -FilePath ($resDir + "\services.txt")
   }
 
   Write-Log "Collecting system information"
   $pad = 27
-  $OS = ExecQuery -Namespace "root\cimv2" -Query "select Caption, CSName, OSArchitecture, BuildNumber, InstallDate, LastBootUpTime, LocalDateTime, TotalVisibleMemorySize, FreePhysicalMemory, SizeStoredInPagingFiles, FreeSpaceInPagingFiles from Win32_OperatingSystem"
+  $OS = ExecQuery -Namespace "root\cimv2" -Query "select Caption, CSName, OSArchitecture, BuildNumber, InstallDate, LastBootUpTime, LocalDateTime, TotalVisibleMemorySize, FreePhysicalMemory, SizeStoredInPagingFiles, FreeSpaceInPagingFiles, MUILanguages from Win32_OperatingSystem"
   $CS = ExecQuery -Namespace "root\cimv2" -Query "select Model, Manufacturer, SystemType, NumberOfProcessors, NumberOfLogicalProcessors, TotalPhysicalMemory, DNSHostName, Domain, DomainRole from Win32_ComputerSystem"
   $BIOS = ExecQuery -Namespace "root\cimv2" -query "select BIOSVersion, Manufacturer, ReleaseDate, SMBIOSBIOSVersion from Win32_BIOS"
   $TZ = ExecQuery -Namespace "root\cimv2" -Query "select Description from Win32_TimeZone"
@@ -848,9 +862,9 @@ if ($proc) {
   "Free physical memory".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.FreePhysicalMemory/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Paging files size / free".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.SizeStoredInPagingFiles/1kb)) + " MB / " + ("{0:N0}" -f ($OS.FreeSpaceInPagingFiles/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Operating System".PadRight($pad) + " : " + $OS.Caption + " " + $OS.OSArchitecture | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Build Number".PadRight($pad) + " : " + $OS.BuildNumber + (Win10Ver $OS.BuildNumber)| Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Installation type".PadRight($pad) + " : " + (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").InstallationType | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Build Number".PadRight($pad) + " : " + $OS.BuildNumber + "." + (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").ubr + (Win10Ver $OS.BuildNumber)| Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Time zone".PadRight($pad) + " : " + $TZ.Description | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Language packs".PadRight($pad) + " : " + ($OS.MUILanguages -join " ") | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Install date".PadRight($pad) + " : " + $OS.InstallDate | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Last boot time".PadRight($pad) + " : " + $OS.LastBootUpTime | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Local time".PadRight($pad) + " : " + $OS.LocalDateTime | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
