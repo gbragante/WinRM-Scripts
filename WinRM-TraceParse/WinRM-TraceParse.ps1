@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20191128
+# Version 20200102
 
 param (
   [string]$InputFile
@@ -23,6 +23,7 @@ Function ToTime{
   return Get-Date -Year $time.Substring(6,2) -Month $time.Substring(0,2) -Day $time.Substring(3,2) -Hour $time.Substring(9,2) -Minute $time.Substring(12,2) -Second $time.Substring(15,2) -Millisecond $time.Substring(18,3)
 }
 
+$InputFile= "C:\files\WinRM\WinRM-TraceParse\WinRM-Trace-W2K8R2SRV-!FMT.txt"
 if ($InputFile -eq "") {
   Write-Host "Trace filename not specified"
   exit
@@ -150,6 +151,8 @@ while (-not $sr.EndOfStream) {
             
       $xmlEvt = New-Object -TypeName System.Xml.XmlDocument
       $xmlPL = New-Object -TypeName System.Xml.XmlDocument
+      $xmlShell = New-Object -TypeName System.Xml.XmlDocument
+      $xmlT = New-Object -TypeName System.Xml.XmlDocument
 
       try {
         $xmlEvt.LoadXml($xmlLine[$thread])         
@@ -242,6 +245,13 @@ while (-not $sr.EndOfStream) {
         $row.Command = $xmlEvt.Envelope.body.CommandLine.Command
       } elseif ($row.Message -eq "Unsubscribe") {
         $row.Command = $xmlEvt.Envelope.Header.OptionSet.FirstChild.'#text'
+      } elseif ($row.Message -eq "Shell") {
+        $ShellXML = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($xmlEvt.Envelope.Body.Shell.creationXml.'#text'))
+        $ShellXML = $ShellXML.Substring($ShellXML.IndexOf("<Obj"))
+        $XmlShell.LoadXml($ShellXML)
+        $fileshell = $dirName + "\" + $FileName.Replace("xml","shell.xml")
+        $XmlShell.OuterXml | Out-File -FilePath $fileshell
+        $tz = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($xmlShell.Obj.MS.BA.'#text'))
       } elseif ($row.Message -eq "Subscribe") {
         $row.Command = $xmlEvt.Envelope.Header.OptionSet.FirstChild.'#text'
         # maybe also add the subscription details here
