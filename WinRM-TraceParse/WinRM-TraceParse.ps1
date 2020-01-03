@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20200102
+# Version 20200103
 
 param (
   [string]$InputFile
@@ -23,7 +23,7 @@ Function ToTime{
   return Get-Date -Year $time.Substring(6,2) -Month $time.Substring(0,2) -Day $time.Substring(3,2) -Hour $time.Substring(9,2) -Minute $time.Substring(12,2) -Second $time.Substring(15,2) -Millisecond $time.Substring(18,3)
 }
 
-$InputFile= "C:\files\WinRM\WinRM-TraceParse\WinRM-Trace-W2K8R2SRV-!FMT.txt"
+$InputFile= "C:\files\WinRM\WinRM-TraceParse\winrm-trace-w10cli1903-!FMT.txt"
 if ($InputFile -eq "") {
   Write-Host "Trace filename not specified"
   exit
@@ -243,8 +243,14 @@ while (-not $sr.EndOfStream) {
         }
       } elseif ($row.Message -eq "CommandLine") {
         $row.Command = $xmlEvt.Envelope.body.CommandLine.Command
+        $arg = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($xmlEvt.Envelope.Body.CommandLine.Arguments))
+        $arg = $arg.Substring($arg.IndexOf("<Obj"))
+        $fileshell = $dirName + "\" + $FileName.Replace("xml","shell.xml")
+        $arg | Out-File -FilePath $fileshell
+
       } elseif ($row.Message -eq "Unsubscribe") {
         $row.Command = $xmlEvt.Envelope.Header.OptionSet.FirstChild.'#text'
+
       } elseif ($row.Message -eq "Shell") {
         $ShellXML = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($xmlEvt.Envelope.Body.Shell.creationXml.'#text'))
         $ShellXML = $ShellXML.Substring($ShellXML.IndexOf("<Obj"))
@@ -252,6 +258,14 @@ while (-not $sr.EndOfStream) {
         $fileshell = $dirName + "\" + $FileName.Replace("xml","shell.xml")
         $XmlShell.OuterXml | Out-File -FilePath $fileshell
         $tz = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($xmlShell.Obj.MS.BA.'#text'))
+        $filetz = $dirName + "\" + $FileName.Replace("xml","tz.bin")
+        $tz | Out-File -FilePath $filetz
+    
+      } elseif ($row.Message -eq "ReceiveResponse") {
+        foreach ($stdout in $xmlEvt.Envelope.Body.ReceiveResponse.Stream) {
+          $out = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($stdout.'#text'))
+        }
+
       } elseif ($row.Message -eq "Subscribe") {
         $row.Command = $xmlEvt.Envelope.Header.OptionSet.FirstChild.'#text'
         # maybe also add the subscription details here
