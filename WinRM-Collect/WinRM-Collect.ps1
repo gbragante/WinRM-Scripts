@@ -1,4 +1,4 @@
-$version = "WinRM-Collect (20191227)"
+$version = "WinRM-Collect (20200113)"
 $DiagVersion = "WinRM-Diag (20190429)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -608,6 +608,12 @@ $cmd = "wevtutil epl ""Microsoft-Windows-GroupPolicy/Operational"" """+ $resDir 
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "GroupPolicy"
+
+Write-Log "Exporting Kernel-EventTracing log"
+$cmd = "wevtutil epl ""Microsoft-Windows-Kernel-EventTracing/Admin"" """+ $resDir + "\" + $env:computername + "-EventTracing.evtx""" + $RdrOut + $RdrErr
+Write-Log $cmd
+Invoke-Expression $cmd
+ArchiveLog "EventTracing"
 
 if (Get-WinEvent -ListLog Microsoft-ServerManagementExperience -ErrorAction SilentlyContinue) {
   Write-Log "Exporting Windows Admin Center log"
