@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20200103
+# Version 20200117
 
 param (
   [string]$InputFile
@@ -23,7 +23,6 @@ Function ToTime{
   return Get-Date -Year $time.Substring(6,2) -Month $time.Substring(0,2) -Day $time.Substring(3,2) -Hour $time.Substring(9,2) -Minute $time.Substring(12,2) -Second $time.Substring(15,2) -Millisecond $time.Substring(18,3)
 }
 
-$InputFile= "C:\files\WinRM\WinRM-TraceParse\winrm-trace-w10cli1903-!FMT.txt"
 if ($InputFile -eq "") {
   Write-Host "Trace filename not specified"
   exit
@@ -145,7 +144,7 @@ while (-not $sr.EndOfStream) {
 
     # Closing tag detection
     #if ($xmlLine[$thread].Substring($xmlLine[$thread].Length-13) -eq "</s:Envelope>") {
-    if ($xmlLine[$thread] -match "</s:Envelope>") {
+    if ($xmlLine[$thread].Substring($xmlLine[$thread].Length-20) -match "</s:Envelope>") {
       $filename = "out-" + $timeFile + "-" + $msgtype + ".xml"
       $xmlLine[$thread] | Out-File -FilePath ($dirName + "\" + $FileName) 
             
