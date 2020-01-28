@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20200117
+# Version 20200128
 
 param (
   [string]$InputFile
@@ -104,7 +104,7 @@ while (-not $sr.EndOfStream) {
     }
 
     $nPos = $line.IndexOf("bytes)] ")
-    $xmlPart = $line.Substring($nPos+8, $line.Length - $nPos - 8)
+    $xmlPart = $line.Substring($nPos+8, $line.Length - $nPos - 8).TrimEnd()
     if ($xmlPart.Length -gt 1) {
       if ($xmlPart.Substring($xmlPart.Length-1, 1) -eq " ") {
         $xmlPart = $xmlPart.Substring(0,$xmlPart.Length - 1)
