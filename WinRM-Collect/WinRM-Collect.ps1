@@ -1,4 +1,4 @@
-$version = "WinRM-Collect (20200113)"
+$version = "WinRM-Collect (20200129)"
 $DiagVersion = "WinRM-Diag (20190429)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -73,6 +73,8 @@ Function Win10Ver {
     return " (RS5 / 1809)"
   } elseif ($build -eq 18362) {
     return " (19H1 / 1903)"
+  } elseif ($build -eq 18363) {
+    return " (19H2 / 1909)"
   }
 }
 
@@ -387,7 +389,6 @@ Write-Log "Get-Culture output"
 "Get-Culture" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
 Get-Culture | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
 
-reg export "HKEY_USERS\S-1-5-20\Control Panel\International"
 Write-Log "Exporting registry key HKEY_USERS\S-1-5-20\Control Panel\International"
 $cmd = "reg export ""HKEY_USERS\S-1-5-20\Control Panel\International"" """ + $resDir + "\InternationalNetworkService.reg.txt"" /y " + $RdrOut + $RdrErr
 Write-Log $cmd
@@ -654,6 +655,11 @@ if ($OSVer -gt 6.1 ) {
 
   Write-Log "Exporting Microsoft-Windows-FileServices-ServerManager-EventProvider/Operational log"
   $cmd = "wevtutil epl Microsoft-Windows-FileServices-ServerManager-EventProvider/Operational """+ $resDir + "\" + $env:computername + "-ServerManager-EventProvider.evtx""" + $RdrOut + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression $cmd
+  
+  Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\ServerManager\ServicingStorage\ServerComponentCache"
+  $cmd = "reg export ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\ServerManager\ServicingStorage\ServerComponentCache"" """ + $resDir + "\ServerComponentCache.reg.txt"" /y " + $RdrOut + $RdrErr
   Write-Log $cmd
   Invoke-Expression $cmd
 }
