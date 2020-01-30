@@ -23,7 +23,6 @@ Function ToTime{
   return Get-Date -Year $time.Substring(6,2) -Month $time.Substring(0,2) -Day $time.Substring(3,2) -Hour $time.Substring(9,2) -Minute $time.Substring(12,2) -Second $time.Substring(15,2) -Millisecond $time.Substring(18,3)
 }
 
-$InputFile = "C:\files\WinRM\WinRM-TraceParse\winrm_evt2_collector-!FMT.txt.001.txt"
 if ($InputFile -eq "") {
   Write-Host "Trace filename not specified"
   exit
@@ -154,8 +153,12 @@ while (-not $sr.EndOfStream) {
       $xmlShell = New-Object -TypeName System.Xml.XmlDocument
       $xmlT = New-Object -TypeName System.Xml.XmlDocument
 
+      # Fixing tags broken by trimming
+      $xmlLine[$thread] = $xmlLine[$thread].Replace("w:EventAction=", "w:Event Action=")
+      $xmlLine[$thread] = $xmlLine[$thread].Replace("<DataName=", "<Data Name=")
+
       try {
-        $xmlEvt.LoadXml($xmlLine[$thread])         
+        $xmlEvt.LoadXml($xmlLine[$thread])
       }
       catch {
         Write-Error $PSItem.Exception 
@@ -194,7 +197,13 @@ while (-not $sr.EndOfStream) {
 
         # Get lowest and highest events date for the packet
         if ($xmlEvt.Envelope.Body.Events.FirstChild.'#cdata-section') {
-          $xmlPL.LoadXml($xmlEvt.Envelope.Body.Events.FirstChild.'#cdata-section')
+          try {
+            $xmlPL.LoadXml($xmlEvt.Envelope.Body.Events.FirstChild.'#cdata-section')
+          }
+          catch {
+            Write-Error $PSItem.Exception 
+            Write-Error $xmlEvt.Envelope.Body.Events.FirstChild.'#cdata-section'
+          }
           $row.dates = $xmlpl.Event.System.TimeCreated.SystemTime + " - "
           $xmlPL.LoadXml($xmlEvt.Envelope.Body.Events.LastChild.'#cdata-section')
           $row.dates = $row.dates + $xmlpl.Event.System.TimeCreated.SystemTime 
