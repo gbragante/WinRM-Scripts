@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20200128
+# Version 20200130
 
 param (
   [string]$InputFile
@@ -23,6 +23,7 @@ Function ToTime{
   return Get-Date -Year $time.Substring(6,2) -Month $time.Substring(0,2) -Day $time.Substring(3,2) -Hour $time.Substring(9,2) -Minute $time.Substring(12,2) -Second $time.Substring(15,2) -Millisecond $time.Substring(18,3)
 }
 
+$InputFile = "C:\files\WinRM\WinRM-TraceParse\winrm_evt2_collector-!FMT.txt.001.txt"
 if ($InputFile -eq "") {
   Write-Host "Trace filename not specified"
   exit
@@ -127,7 +128,7 @@ while (-not $sr.EndOfStream) {
     }
     
     # Process extra content not included in the [SOAP] line
-    $line = $sr.ReadLine()
+    $line = $sr.ReadLine().TrimEnd()
     $lines = $lines + 1
 
     while (-not $sr.EndOfStream) {
@@ -138,7 +139,7 @@ while (-not $sr.EndOfStream) {
         }
       }
       $xmlLine[$thread] = $xmlLine[$thread] + $line
-      $line = $sr.ReadLine()
+      $line = $sr.ReadLine().TrimEnd()
       $lines = $lines + 1
     }
 
