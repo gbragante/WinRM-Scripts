@@ -1,4 +1,4 @@
-$DiagVersion = "WinRM-Diag (20190429)"
+$DiagVersion = "WinRM-Diag (20200203)"
 # by Gianni Bragante gbrag@microsoft.com
 
 Function FindSep {
@@ -346,25 +346,54 @@ if (Test-Path -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventFor
 
 if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
   $search = New-Object DirectoryServices.DirectorySearcher([ADSI]"GC://$env:USERDNSDOMAIN") # The SPN is searched in the forest connecting to a Global catalog
-  Write-Diag ("[INFO] Searching for the SPN HTTP/$env:COMPUTERNAME")
-  $search.filter = "(servicePrincipalName=HTTP/$env:COMPUTERNAME)"
+
+  $SPNReg = ""
+  $SPN = "HTTP/" + $env:COMPUTERNAME
+  Write-Diag ("[INFO] Searching for the SPN $SPN")
+  $search.filter = "(servicePrincipalName=$SPN)"
   $results = $search.Findall()
   if ($results.count -gt 0) {
     foreach ($result in $results) {
       Write-Diag ("[INFO] The SPN HTTP/$env:COMPUTERNAME is registered for DNS name = " + $result.properties.dnshostname + ", DN = " + $result.properties.distinguishedname + ", Category = " + $result.properties.objectcategory)
       if ($result.properties.objectcategory[0].Contains("Computer")) {
         if (-not $result.properties.dnshostname[0].Contains($env:COMPUTERNAME)) {
-          Write-Diag ("[ERROR] The The SPN HTTP/$env:COMPUTERNAME is registered for different DNS host name: " + $result.properties.dnshostname[0])
+          Write-Diag ("[ERROR] The The SPN $SPN is registered for different DNS host name: " + $result.properties.dnshostname[0])
+          $SPNReg = "OTHER"
         }
       } else {
-        Write-Diag "[ERROR] The The SPN HTTP/$env:COMPUTERNAME is NOT registered for a computer account"
+        Write-Diag "[ERROR] The The SPN $SPN is NOT registered for a computer account"
+        $SPNReg = "OTHER"
       }
     }
     if ($results.count -gt 1) {
-      Write-Diag "[ERROR] The The SPN HTTP/$env:COMPUTERNAME is duplicate"
+      Write-Diag "[ERROR] The The SPN $SPN is duplicate"
     }
   } else {
-    Write-Diag "[INFO] The The SPN HTTP/$env:COMPUTERNAME was not found. That's ok, the SPN HOST/$env:COMPUTERNAME will be used"
+    Write-Diag "[INFO] The The SPN $SPN was not found. That's ok, the SPN HOST/$env:COMPUTERNAME will be used"
+  }
+
+  $SPN = "HTTP/" + $env:COMPUTERNAME + ":5985"
+  Write-Diag ("[INFO] Searching for the SPN $SPN")
+  $search.filter = "(servicePrincipalName=$SPN)"
+  $results = $search.Findall()
+  if ($results.count -gt 0) {
+    foreach ($result in $results) {
+      Write-Diag ("[INFO] The SPN HTTP/$env:COMPUTERNAME is registered for DNS name = " + $result.properties.dnshostname + ", DN = " + $result.properties.distinguishedname + ", Category = " + $result.properties.objectcategory)
+      if ($result.properties.objectcategory[0].Contains("Computer")) {
+        if (-not $result.properties.dnshostname[0].Contains($env:COMPUTERNAME)) {
+          Write-Diag ("[ERROR] The The SPN $SPN is registered for different DNS host name: " + $result.properties.dnshostname[0])
+        }
+      } else {
+        Write-Diag "[ERROR] The The SPN $SPN is NOT registered for a computer account"
+      }
+    }
+    if ($results.count -gt 1) {
+      Write-Diag "[ERROR] The The SPN $SPN is duplicate"
+    }
+  } else {
+    if ($SPNReg -eq "OTHER") {
+      Write-Diag "[WARNING] The The SPN $SPN was not found. It is required to accept WinRM connections since the HTTP/$env:COMPUTERNAME is reqistered to another name"
+    }
   }
 
   Write-Diag "[INFO] Checking the WinRMRemoteWMIUsers__ group"
