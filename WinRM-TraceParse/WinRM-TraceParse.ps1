@@ -23,7 +23,6 @@ Function ToTime{
   return Get-Date -Year $time.Substring(6,2) -Month $time.Substring(0,2) -Day $time.Substring(3,2) -Hour $time.Substring(9,2) -Minute $time.Substring(12,2) -Second $time.Substring(15,2) -Millisecond $time.Substring(18,3)
 }
 
-$inputFile = "C:\files\WinRM\WinRM-TraceParse\winrm-trace-devdcs1-20200208-!FMT.txt"
 if ($InputFile -eq "") {
   Write-Host "Trace filename not specified"
   exit
@@ -45,7 +44,7 @@ $col = New-Object system.Data.DataColumn Message,([string]); $tbEvt.Columns.Add(
 $col = New-Object system.Data.DataColumn Command,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn RetObj,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Bookmarks,([string]); $tbEvt.Columns.Add($col)
-$col = New-Object system.Data.DataColumn Items,([string]); $tbEvt.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Items,([int32]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Dates,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Computer,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn OperationTimeout,([string]); $tbEvt.Columns.Add($col)
@@ -73,18 +72,18 @@ $col = New-Object system.Data.DataColumn Seq,([string]); $tbCAPI.Columns.Add($co
 $col = New-Object system.Data.DataColumn FileName,([string]); $tbCAPI.Columns.Add($col)
 
 $tbStats = New-Object system.Data.DataTable
-$col = New-Object system.Data.DataColumn Server,([string]); $tbCAPI.Columns.Add($col)
-$col = New-Object system.Data.DataColumn FirstPacket,([string]); $tbCAPI.Columns.Add($col)
-$col = New-Object system.Data.DataColumn LastPacket,([string]); $tbCAPI.Columns.Add($col)
-$col = New-Object system.Data.DataColumn SpanPkt,([string]); $tbCAPI.Columns.Add($col)
-$col = New-Object system.Data.DataColumn Events,([string]); $tbCAPI.Columns.Add($col)
-$col = New-Object system.Data.DataColumn EvtMinPkt,([string]); $tbCAPI.Columns.Add($col)
-$col = New-Object system.Data.DataColumn EvtFirst,([string]); $tbCAPI.Columns.Add($col)
-$col = New-Object system.Data.DataColumn EvtLast,([string]); $tbCAPI.Columns.Add($col)
-$col = New-Object system.Data.DataColumn SpanEvt,([string]); $tbCAPI.Columns.Add($col)
-$col = New-Object system.Data.DataColumn EvtMinSrv,([string]); $tbCAPI.Columns.Add($col)
-$col = New-Object system.Data.DataColumn DelayStart,([string]); $tbCAPI.Columns.Add($col)
-$col = New-Object system.Data.DataColumn DelayEnd,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Server,([string]); $tbStats.Columns.Add($col)
+$col = New-Object system.Data.DataColumn FirstPacket,([string]); $tbStats.Columns.Add($col)
+$col = New-Object system.Data.DataColumn LastPacket,([string]); $tbStats.Columns.Add($col)
+$col = New-Object system.Data.DataColumn SpanPkt,([string]); $tbStats.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Events,([int32]); $tbStats.Columns.Add($col)
+$col = New-Object system.Data.DataColumn EvtMinPkt,([string]); $tbStats.Columns.Add($col)
+$col = New-Object system.Data.DataColumn EvtFirst,([string]); $tbStats.Columns.Add($col)
+$col = New-Object system.Data.DataColumn EvtLast,([string]); $tbStats.Columns.Add($col)
+$col = New-Object system.Data.DataColumn SpanEvt,([string]); $tbStats.Columns.Add($col)
+$col = New-Object system.Data.DataColumn EvtMinSrv,([string]); $tbStats.Columns.Add($col)
+$col = New-Object system.Data.DataColumn DelayStart,([string]); $tbStats.Columns.Add($col)
+$col = New-Object system.Data.DataColumn DelayEnd,([string]); $tbStats.Columns.Add($col)
 
 $dtStart = Get-Date
 
@@ -208,7 +207,11 @@ while (-not $sr.EndOfStream) {
           $blist += $bookmark.Channel + " = " + $bookmark.RecordId + " "
         }
         $row.Bookmarks = $blist
-        $row.Items = $xmlEvt.Envelope.body.Events.Event.count
+        if ($xmlEvt.Envelope.body.Events.Event.count) {
+          $row.Items = $xmlEvt.Envelope.body.Events.Event.count
+        } else {
+          $row.Items = 1
+        }
 
         # Get lowest and highest events date for the packet
         if ($xmlEvt.Envelope.Body.Events.FirstChild.'#cdata-section') {
@@ -219,11 +222,31 @@ while (-not $sr.EndOfStream) {
             Write-Error $PSItem.Exception 
             Write-Error $xmlEvt.Envelope.Body.Events.FirstChild.'#cdata-section'
           }
-          $row.dates = $xmlpl.Event.System.TimeCreated.SystemTime + " - "
+          $evtFirst = $xmlpl.Event.System.TimeCreated.SystemTime
+          $row.dates = $evtFirst + " - "
+
           $xmlPL.LoadXml($xmlEvt.Envelope.Body.Events.LastChild.'#cdata-section')
-          $row.dates = $row.dates + $xmlpl.Event.System.TimeCreated.SystemTime 
+          $evtLast = $xmlpl.Event.System.TimeCreated.SystemTime
+          $row.dates = $row.dates + $evtLast
           $Computer = $xmlpl.Event.System.Computer 
+
+          # Update the statistics
+          $aSrv = $tbStats.Select("Server = '" + $Computer + "'")        
+          if ($aSrv.Count -eq 0) { 
+            $rowStats = $tbStats.NewRow()
+            $rowStats.Server = $Computer
+            $rowStats.FirstPacket = $time
+            $rowStats.Events = $row.Items
+            $rowStats.EvtFirst = $evtFirst
+            $rowStats.EvtLast = $evtLast
+            $tbStats.Rows.Add($rowStats)
+          } else {
+            $aSrv[0].LastPacket = $time
+            $aSrv[0].Events = $aSrv[0].Events + $row.Items
+            $rowStats.EvtLast = $evtLast
+          }          
         }
+
       } elseif ($row.Message -eq "EnumerateResponse") {
         if ($xmlEvt.Envelope.body.EnumerateResponse.Items.FirstChild.Name -eq "m:Subscription") {
           $row.Items = $xmlEvt.Envelope.body.EnumerateResponse.Items.ChildNodes.Count
@@ -463,6 +486,9 @@ $tbEvt | Export-Csv ($dirName + "\events-" + (Get-Item $InputFile).BaseName +".t
 
 Write-Host "Exporting CAPI events to tsv"
 $tbCAPI | Export-Csv ($dirName + "\CAPI-" + (Get-Item $InputFile).BaseName +".tsv") -noType -Delimiter "`t"
+
+Write-Host "Exporting event statistics to tsv"
+$tbStats | Export-Csv ($dirName + "\EvtStats-" + (Get-Item $InputFile).BaseName +".tsv") -noType -Delimiter "`t"
 
 $duration = New-TimeSpan -Start $dtStart -End (Get-Date)
 Write-Host "Execution completed in" $duration
