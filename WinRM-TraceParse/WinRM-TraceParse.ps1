@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20200130
+# Version 20200214
 
 param (
   [string]$InputFile
@@ -23,6 +23,7 @@ Function ToTime{
   return Get-Date -Year $time.Substring(6,2) -Month $time.Substring(0,2) -Day $time.Substring(3,2) -Hour $time.Substring(9,2) -Minute $time.Substring(12,2) -Second $time.Substring(15,2) -Millisecond $time.Substring(18,3)
 }
 
+$inputFile = "C:\files\WinRM\WinRM-TraceParse\winrm-trace-devdcs1-20200208-!FMT.txt"
 if ($InputFile -eq "") {
   Write-Host "Trace filename not specified"
   exit
@@ -70,6 +71,20 @@ $col = New-Object system.Data.DataColumn URL,([string]); $tbCAPI.Columns.Add($co
 $col = New-Object system.Data.DataColumn TaskID,([string]); $tbCAPI.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Seq,([string]); $tbCAPI.Columns.Add($col)
 $col = New-Object system.Data.DataColumn FileName,([string]); $tbCAPI.Columns.Add($col)
+
+$tbStats = New-Object system.Data.DataTable
+$col = New-Object system.Data.DataColumn Server,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn FirstPacket,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn LastPacket,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn SpanPkt,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Events,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn EvtMinPkt,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn EvtFirst,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn EvtLast,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn SpanEvt,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn EvtMinSrv,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn DelayStart,([string]); $tbCAPI.Columns.Add($col)
+$col = New-Object system.Data.DataColumn DelayEnd,([string]); $tbCAPI.Columns.Add($col)
 
 $dtStart = Get-Date
 
