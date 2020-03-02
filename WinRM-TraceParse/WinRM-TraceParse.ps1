@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20200214
+# Version 20200302
 
 param (
   [string]$InputFile
@@ -23,6 +23,15 @@ Function ToTime{
   return Get-Date -Year $time.Substring(6,2) -Month $time.Substring(0,2) -Day $time.Substring(3,2) -Hour $time.Substring(9,2) -Minute $time.Substring(12,2) -Second $time.Substring(15,2) -Millisecond $time.Substring(18,3)
 }
 
+Function ToLocalTime{
+  param( [string]$time)
+  #2020-01-26T01:10:59.518995000Z
+  $UTC = Get-Date -Year $time.Substring(0,4) -Month $time.Substring(5,2) -Day $time.Substring(8,2) -Hour $time.Substring(11,2) -Minute $time.Substring(14,2) -Second $time.Substring(17,2) -Millisecond $time.Substring(20,3)
+  $UTC = [System.DateTime]::SpecifyKind($UTC, [System.DateTimeKind]::Utc)
+  return [System.TimeZoneInfo]::ConvertTimeFromUtc($UTC, $TZ)
+}
+
+$InputFile = "C:\files\WinRM\WinRM-TraceParse\winrm-trace-devsiems.txt"
 if ($InputFile -eq "") {
   Write-Host "Trace filename not specified"
   exit
@@ -86,6 +95,8 @@ $col = New-Object system.Data.DataColumn DelayStart,([string]); $tbStats.Columns
 $col = New-Object system.Data.DataColumn DelayEnd,([string]); $tbStats.Columns.Add($col)
 
 $dtStart = Get-Date
+$TZName = (Get-WmiObject win32_timezone).StandardName
+$TZ = [System.TimeZoneInfo]::FindSystemTimeZoneById($TZName)
 
 $sr = new-object System.io.streamreader(get-item $InputFile)
 $line = $sr.ReadLine()
@@ -236,14 +247,15 @@ while (-not $sr.EndOfStream) {
             $rowStats = $tbStats.NewRow()
             $rowStats.Server = $Computer
             $rowStats.FirstPacket = $time
+            $rowStats.LastPacket = $time
             $rowStats.Events = $row.Items
-            $rowStats.EvtFirst = $evtFirst
-            $rowStats.EvtLast = $evtLast
+            $rowStats.EvtFirst = ToLocalTime $evtFirst
+            $rowStats.EvtLast = ToLocalTime $evtLast
             $tbStats.Rows.Add($rowStats)
           } else {
             $aSrv[0].LastPacket = $time
             $aSrv[0].Events = $aSrv[0].Events + $row.Items
-            $rowStats.EvtLast = $evtLast
+            $rowStats.EvtLast = ToLocalTime $evtLast
           }          
         }
 
@@ -480,6 +492,13 @@ while (-not $sr.EndOfStream) {
 }
 
 $sr.Close()
+
+$nRow = 0
+foreach ($row in $tbStats.Rows) {
+  $SpanPkt = New-TimeSpan -Start (ToTime $row.FirstPacket) -End (ToTime $row.LastPacket)
+  $tbStats.Rows[$nRow].SpanPkt = $SpanPkt.ToString().Substring(0,8)
+  $nRow++
+}
 
 Write-Host "Exporting WinRM events to tsv"
 $tbEvt | Export-Csv ($dirName + "\events-" + (Get-Item $InputFile).BaseName +".tsv") -noType -Delimiter "`t"
