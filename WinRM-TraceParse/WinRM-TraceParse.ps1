@@ -20,7 +20,7 @@ Function Write-Error {
 
 Function ToTime{
   param( [string]$time)
-  return Get-Date -Year $time.Substring(6,2) -Month $time.Substring(0,2) -Day $time.Substring(3,2) -Hour $time.Substring(9,2) -Minute $time.Substring(12,2) -Second $time.Substring(15,2) -Millisecond $time.Substring(18,3)
+  return (Get-Date -Year (2000 + $time.Substring(6,2)) -Month $time.Substring(0,2) -Day $time.Substring(3,2) -Hour $time.Substring(9,2) -Minute $time.Substring(12,2) -Second $time.Substring(15,2) -Millisecond $time.Substring(18,3))
 }
 
 Function ToLocalTime{
@@ -82,13 +82,14 @@ $col = New-Object system.Data.DataColumn FileName,([string]); $tbCAPI.Columns.Ad
 
 $tbStats = New-Object system.Data.DataTable
 $col = New-Object system.Data.DataColumn Server,([string]); $tbStats.Columns.Add($col)
-$col = New-Object system.Data.DataColumn FirstPacket,([string]); $tbStats.Columns.Add($col)
-$col = New-Object system.Data.DataColumn LastPacket,([string]); $tbStats.Columns.Add($col)
+$col = New-Object system.Data.DataColumn FirstPacket,([datetime]); $tbStats.Columns.Add($col)
+$col = New-Object system.Data.DataColumn LastPacket,([datetime]); $tbStats.Columns.Add($col)
 $col = New-Object system.Data.DataColumn SpanPkt,([string]); $tbStats.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Pckts,([int32]); $tbStats.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Events,([int32]); $tbStats.Columns.Add($col)
 $col = New-Object system.Data.DataColumn EvtMinPkt,([string]); $tbStats.Columns.Add($col)
-$col = New-Object system.Data.DataColumn EvtFirst,([string]); $tbStats.Columns.Add($col)
-$col = New-Object system.Data.DataColumn EvtLast,([string]); $tbStats.Columns.Add($col)
+$col = New-Object system.Data.DataColumn EvtFirst,([datetime]); $tbStats.Columns.Add($col)
+$col = New-Object system.Data.DataColumn EvtLast,([datetime]); $tbStats.Columns.Add($col)
 $col = New-Object system.Data.DataColumn SpanEvt,([string]); $tbStats.Columns.Add($col)
 $col = New-Object system.Data.DataColumn EvtMinSrv,([string]); $tbStats.Columns.Add($col)
 $col = New-Object system.Data.DataColumn DelayStart,([string]); $tbStats.Columns.Add($col)
@@ -246,16 +247,18 @@ while (-not $sr.EndOfStream) {
           if ($aSrv.Count -eq 0) { 
             $rowStats = $tbStats.NewRow()
             $rowStats.Server = $Computer
-            $rowStats.FirstPacket = $time
-            $rowStats.LastPacket = $time
+            $rowStats.FirstPacket = ToTime $time
+            $rowStats.LastPacket = $rowStats.FirstPacket
+            $rowStats.Pckts = 1
             $rowStats.Events = $row.Items
             $rowStats.EvtFirst = ToLocalTime $evtFirst
             $rowStats.EvtLast = ToLocalTime $evtLast
             $tbStats.Rows.Add($rowStats)
           } else {
-            $aSrv[0].LastPacket = $time
+            $aSrv[0].LastPacket = ToTime $time
+            $aSrv[0].Pckts = $aSrv[0].Pckts + 1
             $aSrv[0].Events = $aSrv[0].Events + $row.Items
-            $rowStats.EvtLast = ToLocalTime $evtLast
+            $aSrv[0].EvtLast = ToLocalTime $evtLast
           }          
         }
 
@@ -495,8 +498,10 @@ $sr.Close()
 
 $nRow = 0
 foreach ($row in $tbStats.Rows) {
-  $SpanPkt = New-TimeSpan -Start (ToTime $row.FirstPacket) -End (ToTime $row.LastPacket)
+  $SpanPkt = New-TimeSpan -Start $row.FirstPacket -End $row.LastPacket
   $tbStats.Rows[$nRow].SpanPkt = $SpanPkt.ToString().Substring(0,8)
+  $SpanEvt = New-TimeSpan -Start $row.EvtFirst -End $row.EvtLast
+  $tbStats.Rows[$nRow].SpanEvt = $SpanEvt.ToString().Substring(0,8)
   $nRow++
 }
 
