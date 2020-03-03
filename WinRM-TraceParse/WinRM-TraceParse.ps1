@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20200302
+# Version 20200303
 
 param (
   [string]$InputFile
@@ -498,10 +498,14 @@ $sr.Close()
 
 $nRow = 0
 foreach ($row in $tbStats.Rows) {
-  $SpanPkt = New-TimeSpan -Start $row.FirstPacket -End $row.LastPacket
-  $tbStats.Rows[$nRow].SpanPkt = $SpanPkt.ToString().Substring(0,8)
-  $SpanEvt = New-TimeSpan -Start $row.EvtFirst -End $row.EvtLast
-  $tbStats.Rows[$nRow].SpanEvt = $SpanEvt.ToString().Substring(0,8)
+  #$SpanPkt = New-TimeSpan -Start $row.FirstPacket -End $row.LastPacket
+  #$tbStats.Rows[$nRow].SpanPkt = $SpanPkt.ToString().Substring(0,8)
+  $tbStats.Rows[$nRow].SpanPkt = (New-TimeSpan -Start $row.FirstPacket -End $row.LastPacket).ToString().Substring(0,8)
+  #$SpanEvt = New-TimeSpan -Start $row.EvtFirst -End $row.EvtLast
+  #$tbStats.Rows[$nRow].SpanEvt = $SpanEvt.ToString().Substring(0,8)
+  $tbStats.Rows[$nRow].SpanEvt = (New-TimeSpan -Start $row.EvtFirst -End $row.EvtLast).ToString().Substring(0,8)
+  $tbStats.Rows[$nRow].DelayStart = ("{0:g}” -f (New-TimeSpan -Start $row.EvtFirst -End $row.FirstPacket))
+  $tbStats.Rows[$nRow].DelayEnd = ("{0:g}” -f (New-TimeSpan -Start $row.EvtLast -End $row.LastPacket))
   $nRow++
 }
 
