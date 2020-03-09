@@ -1,4 +1,4 @@
-$DiagVersion = "WinRM-Diag (20200203)"
+$DiagVersion = "WinRM-Diag (20200309)"
 # by Gianni Bragante gbrag@microsoft.com
 
 Function FindSep {
@@ -106,6 +106,22 @@ Function GetSubVal {
     return $SubVal.($SubValue)
   }
 }
+
+$myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+$myWindowsPrincipal = new-object System.Security.Principal.WindowsPrincipal($myWindowsID)
+$adminRole = [System.Security.Principal.WindowsBuiltInRole]::Administrator
+if (-not $myWindowsPrincipal.IsInRole($adminRole)) {
+  Write-Output "This script needs to be run as Administrator"
+  exit
+}
+
+Write-Host "This script is designed to collect information that will help Microsoft Customer Support Services (CSS) troubleshoot an issue you may be experiencing with Windows."
+Write-Host "The collected data may contain Personally Identifiable Information (PII) and/or sensitive data, such as (but not limited to) IP addresses, PC names, and user names."
+Write-Host "Once the tracing and data collection has completed, the script will save the data in a subfolder. This folder is not automatically sent to Microsoft."
+Write-Host "You can send this folder to Microsoft CSS using a secure file transfer tool - Please discuss this with your support professional and also any concerns you may have."
+Write-Host "Find our privacy statement here: https://privacy.microsoft.com/en-us/privacy"
+$confirm = Read-Host ("Are you sure you want to continue[Y/N]?")
+if ($confirm.ToLower() -ne "y") {exit}
 
 $Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
 $resName = "WinRM-Diag-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
