@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20200304
+# Version 20200430
 
 param (
   [string]$InputFile
@@ -25,7 +25,6 @@ Function ToTime{
 
 Function ToLocalTime{
   param( [string]$time)
-  #2020-01-26T01:10:59.518995000Z
   $UTC = Get-Date -Year $time.Substring(0,4) -Month $time.Substring(5,2) -Day $time.Substring(8,2) -Hour $time.Substring(11,2) -Minute $time.Substring(14,2) -Second $time.Substring(17,2) -Millisecond $time.Substring(20,3)
   $UTC = [System.DateTime]::SpecifyKind($UTC, [System.DateTimeKind]::Utc)
   return [System.TimeZoneInfo]::ConvertTimeFromUtc($UTC, $TZ)
@@ -168,8 +167,7 @@ while (-not $sr.EndOfStream) {
     }
 
     # Closing tag detection
-    #if ($xmlLine[$thread].Substring($xmlLine[$thread].Length-13) -eq "</s:Envelope>") {
-    if ($xmlLine[$thread].Substring($xmlLine[$thread].Length-20) -match "</s:Envelope>") {
+    if (($xmlLine[$thread].Substring($xmlLine[$thread].Length-20) -match "</s:Envelope>") -or ($xmlLine[$thread].Substring($xmlLine[$thread].Length-20) -match "</env:Envelope>")) {
       $filename = "out-" + $timeFile + "-" + $msgtype + ".xml"
       $xmlLine[$thread] | Out-File -FilePath ($dirName + "\" + $FileName) 
             
@@ -304,8 +302,12 @@ while (-not $sr.EndOfStream) {
         }
       } elseif ($row.Message -eq "CommandLine") {
         $row.Command = $xmlEvt.Envelope.body.CommandLine.Command
-        $arg = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($xmlEvt.Envelope.Body.CommandLine.Arguments))
-        $arg = $arg.Substring($arg.IndexOf("<Obj"))
+        if ($xmlEvt.Envelope.Body.CommandLine.Arguments -match "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)?$") {
+          $arg = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($xmlEvt.Envelope.Body.CommandLine.Arguments))
+          $arg = $arg.Substring($arg.IndexOf("<Obj"))
+        } else {
+          $arg = $xmlEvt.Envelope.body.CommandLine.Command
+        }
         $fileshell = $dirName + "\" + $FileName.Replace("xml","shell.xml")
         $arg | Out-File -FilePath $fileshell
 
@@ -314,14 +316,15 @@ while (-not $sr.EndOfStream) {
 
       } elseif ($row.Message -eq "Shell") {
         $ShellXML = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($xmlEvt.Envelope.Body.Shell.creationXml.'#text'))
-        $ShellXML = $ShellXML.Substring($ShellXML.IndexOf("<Obj"))
-        $XmlShell.LoadXml($ShellXML)
-        $fileshell = $dirName + "\" + $FileName.Replace("xml","shell.xml")
-        $XmlShell.OuterXml | Out-File -FilePath $fileshell
-        $tz = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($xmlShell.Obj.MS.BA.'#text'))
-        $filetz = $dirName + "\" + $FileName.Replace("xml","tz.bin")
-        $tz | Out-File -FilePath $filetz
-    
+        if ($ShellXML) {
+          $ShellXML = $ShellXML.Substring($ShellXML.IndexOf("<Obj"))
+          $XmlShell.LoadXml($ShellXML)
+          $fileshell = $dirName + "\" + $FileName.Replace("xml","shell.xml")
+          $XmlShell.OuterXml | Out-File -FilePath $fileshell
+          $tz = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($xmlShell.Obj.MS.BA.'#text'))
+          $filetz = $dirName + "\" + $FileName.Replace("xml","tz.bin")
+          $tz | Out-File -FilePath $filetz
+        }    
       } elseif ($row.Message -eq "ReceiveResponse") {
         foreach ($stdout in $xmlEvt.Envelope.Body.ReceiveResponse.Stream) {
           $out = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($stdout.'#text'))
