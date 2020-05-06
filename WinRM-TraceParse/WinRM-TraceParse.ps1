@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20200430
+# Version 20200506
 
 param (
   [string]$InputFile
@@ -302,7 +302,7 @@ while (-not $sr.EndOfStream) {
         }
       } elseif ($row.Message -eq "CommandLine") {
         $row.Command = $xmlEvt.Envelope.body.CommandLine.Command
-        if ($xmlEvt.Envelope.Body.CommandLine.Arguments -match "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)?$") {
+        if (($xmlEvt.Envelope.Body.CommandLine.Arguments) -and ($xmlEvt.Envelope.Body.CommandLine.Arguments -match "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)?$")) {
           $arg = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($xmlEvt.Envelope.Body.CommandLine.Arguments))
           $arg = $arg.Substring($arg.IndexOf("<Obj"))
         } else {
