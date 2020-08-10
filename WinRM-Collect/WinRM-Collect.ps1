@@ -1,4 +1,4 @@
-$version = "WinRM-Collect (20200803)"
+$version = "WinRM-Collect (20200810)"
 $DiagVersion = "WinRM-Diag (20200309)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -197,6 +197,80 @@ Function CreateProcDump {
   }
 }
 
+$FindPIDCode=@'
+using System;
+using System.ServiceProcess;
+using System.Diagnostics;
+using System.Threading;
+using System.Runtime.InteropServices;
+
+namespace MSDATA {
+  public static class FindService {
+
+    public static void Main(){
+	  Console.WriteLine("Hello world!");
+	}
+
+    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+    public struct SERVICE_STATUS_PROCESS {
+      public int serviceType;
+      public int currentState;
+      public int controlsAccepted;
+      public int win32ExitCode;
+      public int serviceSpecificExitCode;
+      public int checkPoint;
+      public int waitHint;
+      public int processID;
+      public int serviceFlags;
+    }
+
+    [DllImport("advapi32.dll")]
+    public static extern bool QueryServiceStatusEx(IntPtr serviceHandle, int infoLevel, IntPtr buffer, int bufferSize, out int bytesNeeded);
+
+    public static int FindServicePid(string SvcName) {
+      //Console.WriteLine("Hello world!");
+      ServiceController sc = new ServiceController(SvcName);
+      if (sc == null) {
+        return -1;
+      }
+                  
+      IntPtr zero = IntPtr.Zero;
+      int SC_STATUS_PROCESS_INFO = 0;
+      int ERROR_INSUFFICIENT_BUFFER = 0;
+
+      Int32 dwBytesNeeded;
+      System.IntPtr hs = sc.ServiceHandle.DangerousGetHandle();
+
+      // Call once to figure the size of the output buffer.
+      QueryServiceStatusEx(hs, SC_STATUS_PROCESS_INFO, zero, 0, out dwBytesNeeded);
+      if (Marshal.GetLastWin32Error() == ERROR_INSUFFICIENT_BUFFER) {
+        // Allocate required buffer and call again.
+        zero = Marshal.AllocHGlobal((int)dwBytesNeeded);
+
+        if (QueryServiceStatusEx(hs, SC_STATUS_PROCESS_INFO, zero, dwBytesNeeded, out dwBytesNeeded)) {
+          SERVICE_STATUS_PROCESS ssp = (SERVICE_STATUS_PROCESS)Marshal.PtrToStructure(zero, typeof(SERVICE_STATUS_PROCESS));
+          return (int)ssp.processID;
+        }
+      }
+      return -1;
+    }
+  }
+}
+'@
+
+add-type -TypeDefinition $FindPIDCode -Language CSharp -ReferencedAssemblies System.ServiceProcess
+
+Function FindServicePid {
+  param( $SvcName)
+  try {
+    $pidsvc = [MSDATA.FindService]::FindServicePid($SvcName)
+    return $pidsvc
+  }
+  catch {
+    return $null
+  }
+}
+
 Function FindSep {
   param( [string]$FindIn, [string]$Left,[string]$Right )
 
@@ -392,9 +466,8 @@ Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
 Write-Log "Collecting dump of the svchost process hosting the WinRM service"
-$proc = get-wmiobject -query "select processid from win32_service where name='WinRM'"
-if ($proc) {
-  $pidWinRM = $proc.ProcessId
+$pidWinRM = FindServicePid "WinRM"
+if ($pidWinRM) {
   CreateProcDump $pidWinRM $resDir "scvhost-WinRM"
 }
 
@@ -410,16 +483,14 @@ if (($list | measure).count -gt 0) {
   Write-Log "No wsmprovhost.exe processes found"
 }
 
-$proc = get-wmiobject -query "select processid from win32_service where name='WinRM'"
 if ($pidWinRM) {
   Write-Log ("The PID of the WinRM service is: " + $pidWinRM)
-  $proc = get-wmiobject -query "select processid from win32_service where name='wecsvc'"
-  if ($proc) {
-    $pidWec = $proc.ProcessId
-    Write-Log ("The PID of the WecSvc service is: " + $pidWec)
-    if ($pidWinRM -ne $pidWec) {
+  $pidWEC = FindServicePid "WecSvc"
+  if ($pidWEC) {
+    Write-Log ("The PID of the WecSvc service is: " + $pidWEC)
+    if ($pidWinRM -ne $pidWEC) {
       Write-Log "WinRM and WecSvc are not in the same process"
-      CreateProcDump $pidWec $resDir "scvhost-WEC"
+      CreateProcDump $pidWEC $resDir "scvhost-WEC"
     }
   }
 }
@@ -427,7 +498,7 @@ if ($pidWinRM) {
 Write-Log "Collecting dump of the SME.exe process"
 $proc = get-process "SME" -ErrorAction SilentlyContinue
 if ($proc) {
-  Write-Log "Collecting dump of the SME.exe process"
+  Write-Log "Process SME.EXE found with PID $proc.id"
   CreateProcDump $proc.id $resDir
 }
 
