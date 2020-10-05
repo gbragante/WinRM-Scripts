@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20200506
+# Version 20201005
 
 param (
   [string]$InputFile
@@ -145,6 +145,7 @@ while (-not $sr.EndOfStream) {
       
       $npos=$line.IndexOf("::")
       $time = ($line.Substring($nPos + 2 , 25))
+
       $timeFile = $time.Substring(9).Replace(":","").Replace(".","-")
     } else {
       $xmlLine[$thread] = $xmlLine[$thread] + $xmlPart
@@ -156,7 +157,7 @@ while (-not $sr.EndOfStream) {
 
     while (-not $sr.EndOfStream) {
       if ($line.Length -gt 1) {
-        if (($line.Length -gt 25) -and ($line.Substring(0,25) -match "[A-Fa-f0-9]{4,5}.[A-Fa-f0-9]{4,5}::\d\d/")) { break }
+        if (($line.Length -gt 25) -and ($line.Substring(0,25) -match "[A-Fa-f0-9]{4,5}.[A-Fa-f0-9]{4,5}::")) { break }
         if ($line.Substring($line.Length-1, 1) -eq " ") {
           $line=$line.Substring(0, $line.Length-1)
         }
@@ -179,6 +180,10 @@ while (-not $sr.EndOfStream) {
       # Fixing tags broken by trimming
       $xmlLine[$thread] = $xmlLine[$thread].Replace("w:EventAction=", "w:Event Action=")
       $xmlLine[$thread] = $xmlLine[$thread].Replace("<DataName=", "<Data Name=")
+      $xmlLine[$thread] = $xmlLine[$thread].Replace("xsi:nil=", " xsi:nil=")
+      $xmlLine[$thread] = $xmlLine[$thread].Replace("Name=""", " Name=""")
+      $xmlLine[$thread] = $xmlLine[$thread].Replace("xsi:type=", " xsi:type=")
+      $xmlLine[$thread] = $xmlLine[$thread].Replace("xmlns:", " xmlns:")
 
       try {
         $xmlEvt.LoadXml($xmlLine[$thread])
