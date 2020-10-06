@@ -180,9 +180,9 @@ while (-not $sr.EndOfStream) {
       # Fixing tags broken by trimming
       $xmlLine[$thread] = $xmlLine[$thread].Replace("w:EventAction=", "w:Event Action=")
       $xmlLine[$thread] = $xmlLine[$thread].Replace("<DataName=", "<Data Name=")
-      $xmlLine[$thread] = $xmlLine[$thread].Replace("xsi:nil=", " xsi:nil=")
+      $xmlLine[$thread] = $xmlLine[$thread].Replace("xsi:", " xsi:")
       $xmlLine[$thread] = $xmlLine[$thread].Replace("Name=""", " Name=""")
-      $xmlLine[$thread] = $xmlLine[$thread].Replace("xsi:type=", " xsi:type=")
+      $xmlLine[$thread] = $xmlLine[$thread].Replace("NANME=""", " NAME=""")
       $xmlLine[$thread] = $xmlLine[$thread].Replace("xmlns:", " xmlns:")
 
       try {
