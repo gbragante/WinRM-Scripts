@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20201005
+# Version 20201006
 
 param (
   [string]$InputFile
@@ -290,6 +290,7 @@ while (-not $sr.EndOfStream) {
       } elseif ($row.Message -eq "Enumerate") {
         $Computer = $xmlEvt.Envelope.Header.MachineID.'#text'
         $row.Command = $xmlevt.Envelope.Header.SelectorSet.Selector.'#text' + " " +  $xmlEvt.Envelope.Body.Enumerate.Filter.'#text'
+        $row.RetObj = $xmlEvt.Envelope.Header.ResourceURI.'#text'.substring($xmlEvt.Envelope.Header.ResourceURI.'#text'.LastIndexOf("/")+1)
       } elseif ($row.Message -eq "Pull") {
         if ($xmlEvt.Envelope.Header.SelectorSet.Selector.Name -eq "__cimnamespace") {
           $row.Command = $xmlevt.Envelope.Header.SelectorSet.Selector.'#text'
