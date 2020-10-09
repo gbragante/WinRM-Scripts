@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20201006
+# Version 20201008
 
 param (
   [string]$InputFile
@@ -44,6 +44,7 @@ New-Item -itemtype directory -path $dirname | Out-Null
 $tbEvt = New-Object system.Data.DataTable
 $col = New-Object system.Data.DataColumn Time,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn PID,([string]); $tbEvt.Columns.Add($col)
+$col = New-Object system.Data.DataColumn TID,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Type,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn To,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Action,([string]); $tbEvt.Columns.Add($col)
@@ -145,10 +146,15 @@ while (-not $sr.EndOfStream) {
       
       $npos=$line.IndexOf("::")
       $time = ($line.Substring($nPos + 2 , 25))
-
       $timeFile = $time.Substring(9).Replace(":","").Replace(".","-")
     } else {
-      $xmlLine[$thread] = $xmlLine[$thread] + $xmlPart
+      if ($xmlLine[$thread]) {
+        $xmlLine[$thread] = $xmlLine[$thread] + $xmlPart
+      } else {
+        # We missed the initial index, ignoring the entire conversation
+        $line = $sr.ReadLine()
+        Continue
+      }
     }
     
     # Process extra content not included in the [SOAP] line
@@ -197,6 +203,7 @@ while (-not $sr.EndOfStream) {
       $row = $tbEvt.NewRow()
       $row.Time = $time
       $row.Pid = [int32]("0x" + $thread.Substring(0,$thread.IndexOf(".")))
+      $row.Tid = [int32]("0x" + $thread.Substring($thread.IndexOf(".")+1))
       $row.Type = $msgtype
       $row.FileSize = (Get-Item ($dirName + "\" + $FileName)).Length
       
