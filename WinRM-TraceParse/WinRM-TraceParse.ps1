@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20201008
+# Version 20201020
 
 param (
   [string]$InputFile
@@ -78,6 +78,17 @@ $col = New-Object system.Data.DataColumn URL,([string]); $tbCAPI.Columns.Add($co
 $col = New-Object system.Data.DataColumn TaskID,([string]); $tbCAPI.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Seq,([string]); $tbCAPI.Columns.Add($col)
 $col = New-Object system.Data.DataColumn FileName,([string]); $tbCAPI.Columns.Add($col)
+
+$tbHTTP = New-Object system.Data.DataTable
+$col = New-Object system.Data.DataColumn Time,([string]); $tbHTTP.Columns.Add($col)
+$col = New-Object system.Data.DataColumn PID,([string]); $tbHTTP.Columns.Add($col)
+$col = New-Object system.Data.DataColumn TID,([string]); $tbHTTP.Columns.Add($col)
+$col = New-Object system.Data.DataColumn RequestID,([string]); $tbHTTP.Columns.Add($col)
+$col = New-Object system.Data.DataColumn ConnectionID,([string]); $tbHTTP.Columns.Add($col)
+$col = New-Object system.Data.DataColumn RemoteAddress,([string]); $tbHTTP.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Method,([string]); $tbHTTP.Columns.Add($col)
+$col = New-Object system.Data.DataColumn URI,([string]); $tbHTTP.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Status,([string]); $tbHTTP.Columns.Add($col)
 
 $tbStats = New-Object system.Data.DataTable
 $col = New-Object system.Data.DataColumn Server,([string]); $tbStats.Columns.Add($col)
@@ -499,6 +510,7 @@ while (-not $sr.EndOfStream) {
 
     $line = $sr.ReadLine()
     $lines = $lines + 1
+  } elseif (($line -match  "[HTTPServiceChannel16 ]") -or ($line -match  "[HTTPServiceChannel16 ]")-and -not ($line -match "SOAP \[")) {
   } else {
     $line = $sr.ReadLine()
     $lines = $lines + 1
