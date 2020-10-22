@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20201020
+# Version 20201022
 
 param (
   [string]$InputFile
@@ -30,10 +30,51 @@ Function ToLocalTime{
   return [System.TimeZoneInfo]::ConvertTimeFromUtc($UTC, $TZ)
 }
 
+Function LineParam {
+  $time = ($line.Substring($nPos + 2 , 25))
+  $thread = $line.Substring(0,20).Replace(" ","")
+  $npos = $thread.indexof("]")
+  $thread = $thread.Substring($npos + 1, $thread.IndexOf("::") - $npos -1)
+  $LinePid = [int32]("0x" + $thread.Substring(0,$thread.IndexOf(".")))
+  $LineTid = [int32]("0x" + $thread.Substring($thread.IndexOf(".")+1))
+  return @{ Time = $time; Thread = $thread; PID = $LinePid; TID = $LineTid }
+}
+
+Function FindSep {
+  param( [string]$FindIn, [string]$Left,[string]$Right )
+
+  if ($left -eq "") {
+    $Start = 0
+  } else {
+    $Start = $FindIn.IndexOf($Left) 
+    if ($Start -gt 0 ) {
+      $Start = $Start + $Left.Length
+    } else {
+       return ""
+    }
+  }
+
+  if ($Right -eq "") {
+    $End = $FindIn.Substring($Start).Length
+  } else {
+    $End = $FindIn.Substring($Start).IndexOf($Right)
+    if ($end -le 0) {
+      return ""
+    }
+  }
+  $Found = $FindIn.Substring($Start, $End)
+  return $Found
+}
+
 if ($InputFile -eq "") {
   Write-Host "Trace filename not specified"
   exit
 }
+
+$time = ""
+$LineThread = ""
+$LinePid = ""
+$LineTid = ""
 
 $lines = 0
 $xmlLine = @{}
@@ -81,8 +122,9 @@ $col = New-Object system.Data.DataColumn FileName,([string]); $tbCAPI.Columns.Ad
 
 $tbHTTP = New-Object system.Data.DataTable
 $col = New-Object system.Data.DataColumn Time,([string]); $tbHTTP.Columns.Add($col)
-$col = New-Object system.Data.DataColumn PID,([string]); $tbHTTP.Columns.Add($col)
-$col = New-Object system.Data.DataColumn TID,([string]); $tbHTTP.Columns.Add($col)
+$col = New-Object system.Data.DataColumn SysTID,([string]); $tbHTTP.Columns.Add($col)
+$col = New-Object system.Data.DataColumn AppPID,([string]); $tbHTTP.Columns.Add($col)
+$col = New-Object system.Data.DataColumn AppTID,([string]); $tbHTTP.Columns.Add($col)
 $col = New-Object system.Data.DataColumn RequestID,([string]); $tbHTTP.Columns.Add($col)
 $col = New-Object system.Data.DataColumn ConnectionID,([string]); $tbHTTP.Columns.Add($col)
 $col = New-Object system.Data.DataColumn RemoteAddress,([string]); $tbHTTP.Columns.Add($col)
@@ -510,7 +552,22 @@ while (-not $sr.EndOfStream) {
 
     $line = $sr.ReadLine()
     $lines = $lines + 1
-  } elseif (($line -match  "[HTTPServiceChannel16 ]") -or ($line -match  "[HTTPServiceChannel16 ]")-and -not ($line -match "SOAP \[")) {
+  } elseif (($line -match  "HTTPServiceChannel16 ") -or ($line -match  "HTTP Service Channel")-and -not ($line -match "SOAP \[")) {
+    if ($line -match "Request received") {
+      $LP = LineParam
+      $rowHTTP = $tbHTTP.NewRow()
+      $rowHTTP.Time = $LP.Time
+      $rowHTTP.SysTID = $LP.TID
+      $rowHTTP.RequestID = FindSep -FindIn $line -Left "(request ID " -Right ")"
+      $rowHTTP.ConnectionID = FindSep -FindIn $line -Left "(connection ID " -Right ")"
+      $rowHTTP.RemoteAddress = FindSep -FindIn $line -Left "from remote address " -Right ". "
+
+      Write-Host ""
+    }
+
+
+    $line = $sr.ReadLine()
+    $lines = $lines + 1
   } else {
     $line = $sr.ReadLine()
     $lines = $lines + 1
