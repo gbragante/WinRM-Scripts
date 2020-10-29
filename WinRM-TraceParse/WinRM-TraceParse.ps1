@@ -31,6 +31,7 @@ Function ToLocalTime{
 }
 
 Function LineParam {
+  $npos=$line.IndexOf("::")
   $time = ($line.Substring($nPos + 2 , 25))
   $thread = $line.Substring(0,20).Replace(" ","")
   $npos = $thread.indexof("]")
@@ -570,17 +571,18 @@ while (-not $sr.EndOfStream) {
         $aHTTP[0].URI = FindSep -FindIn $line -Left "for URI " -Right " with"
       }
     } elseif ($line -match "Server application passed response") {
-      $reqID = FindSep -FindIn $line -Left "request ID " -Right ","
+      $reqID = FindSep -FindIn $line -Left "(request ID " -Right ","
       $aHTTP = $tbHTTP.Select("RequestID = '" + $reqID + "'")        
       if ($aHTTP.Count -gt 0) { 
+        Write-Host $line
         $LP = LineParam
         $aHTTP[0].AppPID = $LP.PID
         $aHTTP[0].AppTID = $LP.TID
-        $aHTTP[0].AppPID = FindSep -FindIn $line -Left "for URI " -Right " with"
+        $aHTTP[0].Method = FindSep -FindIn $line -Left ", method " -Right ", "
+        $aHTTP[0].Status = FindSep -FindIn $line -Left "status code " -Right "."
+        $duration = New-TimeSpan -Start (ToTime $aHTTP[0].Time) -End (ToTime $LP.Time)
+        $aHTTP[0].Duration = $duration.TotalMilliseconds
       }
-
-      [0]151C.0E44::10/15/20-22:16:28.3606276 [HTTPServiceChannel16 ] Server application passed response (request ID 16717361818946783843, connection ID 16717361818409912930, method POST, header length 0, number of entity chunks 0, cache policy 0) with status code 200.  
-
     }
 
     $line = $sr.ReadLine()
@@ -614,6 +616,9 @@ $tbCAPI | Export-Csv ($dirName + "\CAPI-" + (Get-Item $InputFile).BaseName +".ts
 
 Write-Host "Exporting event statistics to tsv"
 $tbStats | Export-Csv ($dirName + "\EvtStats-" + (Get-Item $InputFile).BaseName +".tsv") -noType -Delimiter "`t"
+
+Write-Host "Exporting HTTP events to tsv"
+$tbHTTP | Export-Csv ($dirName + "\HTTP-" + (Get-Item $InputFile).BaseName +".tsv") -noType -Delimiter "`t"
 
 $duration = New-TimeSpan -Start $dtStart -End (Get-Date)
 Write-Host "Execution completed in" $duration
