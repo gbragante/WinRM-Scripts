@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20201022
+# Version 20201029
 
 param (
   [string]$InputFile
@@ -131,6 +131,7 @@ $col = New-Object system.Data.DataColumn RemoteAddress,([string]); $tbHTTP.Colum
 $col = New-Object system.Data.DataColumn Method,([string]); $tbHTTP.Columns.Add($col)
 $col = New-Object system.Data.DataColumn URI,([string]); $tbHTTP.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Status,([string]); $tbHTTP.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Duration,([string]); $tbHTTP.Columns.Add($col)
 
 $tbStats = New-Object system.Data.DataTable
 $col = New-Object system.Data.DataColumn Server,([string]); $tbStats.Columns.Add($col)
@@ -561,10 +562,26 @@ while (-not $sr.EndOfStream) {
       $rowHTTP.RequestID = FindSep -FindIn $line -Left "(request ID " -Right ")"
       $rowHTTP.ConnectionID = FindSep -FindIn $line -Left "(connection ID " -Right ")"
       $rowHTTP.RemoteAddress = FindSep -FindIn $line -Left "from remote address " -Right ". "
+      $tbHTTP.Rows.Add($rowHTTP)
+    } elseif ($line -match "Delivered request to server application") {
+      $reqID = FindSep -FindIn $line -Left "request ID " -Right ","
+      $aHTTP = $tbHTTP.Select("RequestID = '" + $reqID + "'")        
+      if ($aHTTP.Count -gt 0) { 
+        $aHTTP[0].URI = FindSep -FindIn $line -Left "for URI " -Right " with"
+      }
+    } elseif ($line -match "Server application passed response") {
+      $reqID = FindSep -FindIn $line -Left "request ID " -Right ","
+      $aHTTP = $tbHTTP.Select("RequestID = '" + $reqID + "'")        
+      if ($aHTTP.Count -gt 0) { 
+        $LP = LineParam
+        $aHTTP[0].AppPID = $LP.PID
+        $aHTTP[0].AppTID = $LP.TID
+        $aHTTP[0].AppPID = FindSep -FindIn $line -Left "for URI " -Right " with"
+      }
 
-      Write-Host ""
+      [0]151C.0E44::10/15/20-22:16:28.3606276 [HTTPServiceChannel16 ] Server application passed response (request ID 16717361818946783843, connection ID 16717361818409912930, method POST, header length 0, number of entity chunks 0, cache policy 0) with status code 200.  
+
     }
-
 
     $line = $sr.ReadLine()
     $lines = $lines + 1
