@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20201029
+# Version 20201109
 
 param (
   [string]$InputFile
@@ -65,6 +65,15 @@ Function FindSep {
   }
   $Found = $FindIn.Substring($Start, $End)
   return $Found
+}
+
+Function ConvertIP {
+  param( [string]$Addr)
+
+  if ($Addr.Substring(0,4) -eq "0x02") {
+    $IPAddr = ([int32]("0x" + $Addr.Substring(10,2))).ToString() + "." + ([int32]("0x" + $Addr.Substring(12,2))).ToString() + "." + ([int32]("0x" + $Addr.Substring(14,2))).ToString() + "." + ([int32]("0x" + $Addr.Substring(16,2))).ToString()
+    return $IPAddr
+  }
 }
 
 if ($InputFile -eq "") {
@@ -245,6 +254,7 @@ while (-not $sr.EndOfStream) {
       $xmlLine[$thread] = $xmlLine[$thread].Replace("Name=""", " Name=""")
       $xmlLine[$thread] = $xmlLine[$thread].Replace("NANME=""", " NAME=""")
       $xmlLine[$thread] = $xmlLine[$thread].Replace("xmlns:", " xmlns:")
+      $xmlLine[$thread] = $xmlLine[$thread].Replace("s:mustUnderstand", " s:mustUnderstand")
 
       try {
         $xmlEvt.LoadXml($xmlLine[$thread])
@@ -562,8 +572,9 @@ while (-not $sr.EndOfStream) {
       $rowHTTP.SysTID = $LP.TID
       $rowHTTP.RequestID = FindSep -FindIn $line -Left "(request ID " -Right ")"
       $rowHTTP.ConnectionID = FindSep -FindIn $line -Left "(connection ID " -Right ")"
-      $rowHTTP.RemoteAddress = FindSep -FindIn $line -Left "from remote address " -Right ". "
+      $rowHTTP.RemoteAddress = ConvertIP (FindSep -FindIn $line -Left "from remote address " -Right ". ")
       $tbHTTP.Rows.Add($rowHTTP)
+
     } elseif ($line -match "Delivered request to server application") {
       $reqID = FindSep -FindIn $line -Left "request ID " -Right ","
       $aHTTP = $tbHTTP.Select("RequestID = '" + $reqID + "'")        
