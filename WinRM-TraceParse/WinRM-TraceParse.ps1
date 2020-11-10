@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20201109
+# Version 20201110
 
 param (
   [string]$InputFile
@@ -570,19 +570,21 @@ while (-not $sr.EndOfStream) {
       $rowHTTP = $tbHTTP.NewRow()
       $rowHTTP.Time = $LP.Time
       $rowHTTP.SysTID = $LP.TID
-      $rowHTTP.RequestID = FindSep -FindIn $line -Left "(request ID " -Right ")"
-      $rowHTTP.ConnectionID = FindSep -FindIn $line -Left "(connection ID " -Right ")"
+      #$rowHTTP.RequestID = """" + (FindSep -FindIn $line -Left "(request ID " -Right ")") + """"
+      #$rowHTTP.ConnectionID = """" + (FindSep -FindIn $line -Left "(connection ID " -Right ")") + """"
+      $rowHTTP.RequestID = ":" + (FindSep -FindIn $line -Left "(request ID " -Right ")")
+      $rowHTTP.ConnectionID = ":" + (FindSep -FindIn $line -Left "(connection ID " -Right ")")
       $rowHTTP.RemoteAddress = ConvertIP (FindSep -FindIn $line -Left "from remote address " -Right ". ")
       $tbHTTP.Rows.Add($rowHTTP)
 
     } elseif ($line -match "Delivered request to server application") {
-      $reqID = FindSep -FindIn $line -Left "request ID " -Right ","
+      $reqID = ":" + (FindSep -FindIn $line -Left "request ID " -Right ",")
       $aHTTP = $tbHTTP.Select("RequestID = '" + $reqID + "'")        
       if ($aHTTP.Count -gt 0) { 
         $aHTTP[0].URI = FindSep -FindIn $line -Left "for URI " -Right " with"
       }
     } elseif ($line -match "Server application passed response") {
-      $reqID = FindSep -FindIn $line -Left "(request ID " -Right ","
+      $reqID = ":" + (FindSep -FindIn $line -Left "(request ID " -Right ",")
       $aHTTP = $tbHTTP.Select("RequestID = '" + $reqID + "'")        
       if ($aHTTP.Count -gt 0) { 
         Write-Host $line
