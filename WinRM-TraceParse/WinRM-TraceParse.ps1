@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20201110
+# Version 20201124
 
 param (
   [string]$InputFile
@@ -255,6 +255,7 @@ while (-not $sr.EndOfStream) {
       $xmlLine[$thread] = $xmlLine[$thread].Replace("NANME=""", " NAME=""")
       $xmlLine[$thread] = $xmlLine[$thread].Replace("xmlns:", " xmlns:")
       $xmlLine[$thread] = $xmlLine[$thread].Replace("s:mustUnderstand", " s:mustUnderstand")
+      $xmlLine[$thread] = $xmlLine[$thread].Replace("IsCurrent=", " IsCurrent=")
 
       try {
         $xmlEvt.LoadXml($xmlLine[$thread])
