@@ -1,4 +1,4 @@
-$version = "WinRM-Collect (20200810)"
+$version = "WinRM-Collect (20201124)"
 $DiagVersion = "WinRM-Diag (20200309)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -74,9 +74,11 @@ Function Win10Ver {
   } elseif ($build -eq 18362) {
     return " (19H1 / 1903)"
   } elseif ($build -eq 18363) {
-    return " (19H2 / 1909)"
+    return " (19H2 / 1909)"    
   } elseif ($build -eq 19041) {
     return " (20H1 / 2004)"  
+  } elseif ($build -eq 19042) {
+    return " (20H2)"  
   }
 }
 
@@ -182,6 +184,8 @@ Function CreateProcDump {
     Write-host ("The folder " + $DumpFolder + " does not exist")
     return $false
   }
+  $DumpCreated = $false
+
   $proc = Get-Process -ID $ProcID
   if (-not $proc) {
     Write-Log ("The process with PID $ProcID is not running")
@@ -190,10 +194,31 @@ Function CreateProcDump {
   if (-not $Filename) { $filename = $proc.Name }
   $DumpFile = $DumpFolder + "\" + $filename + "-" + $ProcID + "_" + (get-date).ToString("yyyyMMdd_HHmmss") + ".dmp"
   
-  if ([MSDATA.UserDump]::GenerateUserDump($ProcID, $DumpFile)) {
-    Write-Log ("The dump for the Process ID $ProcID was generated as $DumpFile")
-  } else {
-    Write-Log "Failed to create the dump for the Process ID $ProcID"
+  if (Test-Path ($root + "\" + $procdump)) {
+    $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma $ProcID """ + $DumpFile + """ >>""" + $outfile + """ 2>>""" + $errfile + """"
+    Write-Log $cmd
+    Invoke-Expression $cmd
+
+    if (Test-Path $DumpFile) {
+      if ((Get-Item $DumpFile).length -gt 1000) {
+        $DumpCreated = $true
+        Write-Log "Successfully created $DumpFile with ProcDump"
+      } else {
+        Write-Log "The created dump file is too small, removing it"
+        Remove-Item $DumpFile
+      }
+    } else {
+      Write-Log "Cannot find the dump file"
+    }
+  }
+
+  if (-not $DumpCreated) {
+    Write-Log "Cannot create the dump with ProcDump, trying the backup method"
+    if ([MSDATA.UserDump]::GenerateUserDump($ProcID, $DumpFile)) {
+      Write-Log ("The dump for the Process ID $ProcID was generated as $DumpFile")
+    } else {
+      Write-Log "Failed to create the dump for the Process ID $ProcID"
+    }
   }
 }
 
@@ -436,9 +461,26 @@ $fqdn = [System.Net.Dns]::GetHostByName(($env:computerName)).HostName
 
 $OSVer = ([environment]::OSVersion.Version.Major) + ([environment]::OSVersion.Version.Minor) /10
 
+if ($env:PROCESSOR_ARCHITECTURE -eq "AMD64") {
+  $procdump = "procdump64.exe"
+} else {
+  $procdump = "procdump.exe"
+}
+
 New-Item -itemtype directory -path $resDir | Out-Null
 
 Write-Log $version
+
+"Logman create counter FwdEvtPerf -o """ + $resdir + "\FwdEvtPerf.blg"" -f bin -v mmddhhmm -c ""\Process(*)\*"" ""\Processor(*)\*"" ""\PhysicalDisk(*)\*"" ""\Event Tracing for Windows Session(EventLog-*)\Events Lost"" ""\Event Tracing for Windows Session(EventLog-*)\Events Logged per sec"" ""\HTTP Service Request Queues(*)\*"" -si 00:00:01" | Out-File -FilePath ($resDir + "\WEF-Perf.bat") -Append -Encoding ascii
+"Logman start FwdEvtPerf" | Out-File -FilePath ($resDir + "\WEF-Perf.bat") -Append -Encoding ascii
+"timeout 60" | Out-File -FilePath ($resDir + "\WEF-Perf.bat") -Append -Encoding ascii
+"Logman stop FwdEvtPerf" | Out-File -FilePath ($resDir + "\WEF-Perf.bat") -Append -Encoding ascii
+"Logman delete FwdEvtPerf" | Out-File -FilePath ($resDir + "\WEF-Perf.bat") -Append -Encoding ascii
+
+$cmd = $resDir + "\WEF-Perf.bat"
+Write-Log $cmd
+Start-Process $cmd -WindowStyle Minimized
+
 Write-Log "Retrieving WinRM configuration"
 $config = Get-ChildItem WSMan:\localhost\ -Recurse -ErrorAction Continue 2>>$errfile
 if (!$config) {
@@ -513,7 +555,7 @@ if (Get-ChildItem -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCol
   if ($subList -gt "") {
     foreach($sub in $subList) {
       Write-Log "Subscription: " + $sub
-      ("Subsription: " + $sub) | out-file -FilePath ($resDir + "\Subscriptions.txt") -Append
+      ("Subscription: " + $sub) | out-file -FilePath ($resDir + "\Subscriptions.txt") -Append
       "-----------------------" | out-file -FilePath ($resDir + "\Subscriptions.txt") -Append
       $cmd = "wecutil gs """ + $sub + """ /f:xml" + $RdrErr
       Write-Log $cmd
@@ -539,7 +581,7 @@ Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
 Write-Log "Finding SID of WinRMRemoteWMIUsers__ group"
-$objUser = New-Object System.Security.Principal.NTAccount("WinRMRemoteWMIUsers__") -ErrorAction Continue 2>>$errfile
+$objUser = New-Object System.Security.Principal.NTAccount("WinRMRemoteWMIUsers__") -ErrorAction SilentlyContinue 2>>$errfile
 $strSID = $objUser.Translate([System.Security.Principal.SecurityIdentifier]).value
 
 $objSID = New-Object System.Security.Principal.SecurityIdentifier($strSID)
@@ -791,6 +833,12 @@ EvtLogDetails "Application"
 EvtLogDetails "System"
 EvtLogDetails "Security"
 EvtLogDetails "ForwardedEvents"
+
+Write-Log "Autologgers configuration"
+Get-AutologgerConfig -Name EventLog-ForwardedEvents | Out-File -FilePath ($resDir + "\AutoLoggersConfiguration.txt") -Append
+Get-AutologgerConfig -Name EventLog-System | Out-File -FilePath ($resDir + "\AutoLoggersConfiguration.txt") -Append
+Get-AutologgerConfig -Name EventLog-Security| Out-File -FilePath ($resDir + "\AutoLoggersConfiguration.txt") -Append
+Get-AutologgerConfig -Name EventLog-Application| Out-File -FilePath ($resDir + "\AutoLoggersConfiguration.txt") -Append
 
 if ($OSVer -gt 6.1 ) {
   Write-Log "Copying ServerManager configuration"

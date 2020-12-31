@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20201124
+# Version 20201231
 
 param (
   [string]$InputFile
@@ -240,8 +240,19 @@ while (-not $sr.EndOfStream) {
     # Closing tag detection
     if (($xmlLine[$thread].Substring($xmlLine[$thread].Length-20) -match "</s:Envelope>") -or ($xmlLine[$thread].Substring($xmlLine[$thread].Length-20) -match "</env:Envelope>")) {
       $filename = "out-" + $timeFile + "-" + $msgtype + ".xml"
+
+      # Trimming the lines containing two SOAP packets
+      # I don't understand why it happens but it happens. We cannot load two envelopes in the same xml document so discarding the second envelope for now
+
+      $ClosePos = $xmlLine[$thread].IndexOf("</s:Envelope>")
+      if ($ClosePos) {
+        if ($ClosePos + 13 -ne $xmlLine[$thread].Length) {
+          $xmlLine[$thread] = $xmlLine[$thread].Substring(0, $ClosePos + 13)
+        }
+      }
+
       $xmlLine[$thread] | Out-File -FilePath ($dirName + "\" + $FileName) 
-            
+
       $xmlEvt = New-Object -TypeName System.Xml.XmlDocument
       $xmlPL = New-Object -TypeName System.Xml.XmlDocument
       $xmlShell = New-Object -TypeName System.Xml.XmlDocument
