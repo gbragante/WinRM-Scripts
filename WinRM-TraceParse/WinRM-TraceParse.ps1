@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20201231
+# Version 20210208
 
 param (
   [string]$InputFile
@@ -150,11 +150,11 @@ $col = New-Object system.Data.DataColumn LastPacket,([datetime]); $tbStats.Colum
 $col = New-Object system.Data.DataColumn SpanPkt,([string]); $tbStats.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Pckts,([int32]); $tbStats.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Events,([int32]); $tbStats.Columns.Add($col)
-$col = New-Object system.Data.DataColumn EvtMinPkt,([string]); $tbStats.Columns.Add($col)
+$col = New-Object system.Data.DataColumn EvtSecPkt,([string]); $tbStats.Columns.Add($col)
 $col = New-Object system.Data.DataColumn EvtFirst,([datetime]); $tbStats.Columns.Add($col)
 $col = New-Object system.Data.DataColumn EvtLast,([datetime]); $tbStats.Columns.Add($col)
 $col = New-Object system.Data.DataColumn SpanEvt,([string]); $tbStats.Columns.Add($col)
-$col = New-Object system.Data.DataColumn EvtMinSrv,([string]); $tbStats.Columns.Add($col)
+$col = New-Object system.Data.DataColumn EvtSecSrv,([string]); $tbStats.Columns.Add($col)
 $col = New-Object system.Data.DataColumn DelayStart,([string]); $tbStats.Columns.Add($col)
 $col = New-Object system.Data.DataColumn DelayEnd,([string]); $tbStats.Columns.Add($col)
 
@@ -628,8 +628,8 @@ foreach ($row in $tbStats.Rows) {
   $tbStats.Rows[$nRow].SpanEvt = $SpanEvt.ToString().Substring(0,8)
   $tbStats.Rows[$nRow].DelayStart = ("{0:g}” -f (New-TimeSpan -Start $row.EvtFirst -End $row.FirstPacket))
   $tbStats.Rows[$nRow].DelayEnd = ("{0:g}” -f (New-TimeSpan -Start $row.EvtLast -End $row.LastPacket))
-  $tbStats.Rows[$nRow].EvtMinPkt = [math]::Round($row.Events / $SpanPkt.TotalMinutes)
-  $tbStats.Rows[$nRow].EvtMinSrv = [math]::Round($row.Events / $SpanEvt.TotalMinutes)
+  $tbStats.Rows[$nRow].EvtSecPkt = [math]::Round($row.Events / $SpanPkt.TotalSeconds)
+  $tbStats.Rows[$nRow].EvtSecSrv = [math]::Round($row.Events / $SpanEvt.TotalSeconds)
   $nRow++
 }
 
