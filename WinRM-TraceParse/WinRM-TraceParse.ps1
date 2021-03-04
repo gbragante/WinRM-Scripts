@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20210302
+# Version 20210304
 
 param (
   [string]$InputFile
@@ -244,11 +244,16 @@ while (-not $sr.EndOfStream) {
 
       # Trimming the lines containing two SOAP packets
       # I don't understand why it happens but it happens. We cannot load two envelopes in the same xml document so discarding the second envelope for now
+      # 20210304 This has to be fixed because it is not always true: sometimes the two packets are the same level, other times they are nested.
+      # When they are nested it is ok, for example for subscriptions
+      # When there are two packet in the same SOAP envelope they are often related to the same operation, so it is ok to discard the second.
 
-      $ClosePos = $xmlLine[$thread].IndexOf("</s:Envelope>")
-      if ($ClosePos) {
-        if ($ClosePos + 13 -ne $xmlLine[$thread].Length) {
-          $xmlLine[$thread] = $xmlLine[$thread].Substring(0, $ClosePos + 13)
+      if (-not $xmlLine[$thread] -match "EnumerateResponse") {
+        $ClosePos = $xmlLine[$thread].IndexOf("</s:Envelope>")
+        if ($ClosePos) {
+          if ($ClosePos + 13 -ne $xmlLine[$thread].Length) {
+            $xmlLine[$thread] = $xmlLine[$thread].Substring(0, $ClosePos + 13)
+          }
         }
       }
 
