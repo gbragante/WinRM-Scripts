@@ -194,10 +194,14 @@ while (-not $sr.EndOfStream) {
     }
 
     $nPos = $line.IndexOf("bytes)] ")
-    $xmlPart = $line.Substring($nPos+8, $line.Length - $nPos - 8).TrimEnd()
+
+    if ($line -match "10988379") {
+
+    #$xmlPart = $line.Substring($nPos+8, $line.Length - $nPos - 8).TrimEnd() 20210319 Removed trimming because it was breaking tags
+    $xmlPart = $line.Substring($nPos+8, $line.Length - $nPos - 8)
     if ($xmlPart.Length -gt 1) {
-      if ($xmlPart.Substring($xmlPart.Length-1, 1) -eq " ") {
-        $xmlPart = $xmlPart.Substring(0,$xmlPart.Length - 1)
+      if ($xmlPart.Substring($xmlPart.Length-2, 2) -eq "  ") {  # 20210319 Removing only two training spaces, if there are three we have to leave one. Earlier it was coded to remove only one space, not sure if something changed with trace parsing or with OS version. I may have fixed something and breaked something else
+        $xmlPart = $xmlPart.Substring(0,$xmlPart.Length - 2)
       }
     }
 
@@ -223,14 +227,15 @@ while (-not $sr.EndOfStream) {
     }
     
     # Process extra content not included in the [SOAP] line
-    $line = $sr.ReadLine().TrimEnd()
+    # $line = $sr.ReadLine().TrimEnd() 20210319 Removed the trimming because it was breaking tags
+    $line = $sr.ReadLine()
     $lines = $lines + 1
 
     while (-not $sr.EndOfStream) {
       if ($line.Length -gt 1) {
-        if (($line.Length -gt 25) -and ($line.Substring(0,25) -match "[A-Fa-f0-9]{4,5}.[A-Fa-f0-9]{4,5}::")) { break }
-        if ($line.Substring($line.Length-1, 1) -eq " ") {
-          $line=$line.Substring(0, $line.Length-1)
+        if (($line.Length -gt 25) -and ($line.Substring(0,25) -match "[A-Fa-f0-9]{4,5}.[A-Fa-f0-9]{4,5}::")) { break }  # If this is a trace line and not extra content it will treat this appropriately
+        if ($line.Substring($line.Length-2, 2) -eq "  ") { # 20210319 Removing only two training spaces, if there are three we have to leave one. Earlier it was coded to remove only one space, not sure if something changed with trace parsing or with OS version. I may have fixed something and breaked something else
+          $line=$line.Substring(0, $line.Length-2)
         }
       }
       $xmlLine[$thread] = $xmlLine[$thread] + $line
@@ -329,7 +334,13 @@ while (-not $sr.EndOfStream) {
           $evtFirst = $xmlpl.Event.System.TimeCreated.SystemTime
           $row.dates = $evtFirst + " - "
 
-          $xmlPL.LoadXml($xmlEvt.Envelope.Body.Events.LastChild.'#cdata-section')
+          try {
+            $xmlPL.LoadXml($xmlEvt.Envelope.Body.Events.LastChild.'#cdata-section')
+          }
+          catch {
+            Write-Error $PSItem.Exception 
+            Write-Error $xmlEvt.Envelope.Body.Events.LastChild.'#cdata-section'
+          }
           $evtLast = $xmlpl.Event.System.TimeCreated.SystemTime
           $row.dates = $row.dates + $evtLast
           $Computer = $xmlpl.Event.System.Computer 
