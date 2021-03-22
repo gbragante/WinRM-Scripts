@@ -170,6 +170,8 @@ $col = New-Object system.Data.DataColumn SpanEvt,([string]); $tbStats.Columns.Ad
 $col = New-Object system.Data.DataColumn EvtSecSrv,([string]); $tbStats.Columns.Add($col)
 $col = New-Object system.Data.DataColumn DelayStart,([string]); $tbStats.Columns.Add($col)
 $col = New-Object system.Data.DataColumn DelayEnd,([string]); $tbStats.Columns.Add($col)
+$col = New-Object system.Data.DataColumn PktPrc,([long]); $tbStats.Columns.Add($col)
+$col = New-Object system.Data.DataColumn AvgmsPkt,([long]); $tbStats.Columns.Add($col)
 
 $TrimStr = "  "
 $dtStart = Get-Date
@@ -212,6 +214,7 @@ while (-not $sr.EndOfStream) {
       $xmlPart = (TrimTrailing $xmlPart $TrimStr)
     }
 
+
     # This is one of the SOAP lines
     if ($line -match  "index 1 of") {
       if ($xmlLine[$thread]) {
@@ -225,6 +228,7 @@ while (-not $sr.EndOfStream) {
       $timeFile = $time.Substring(9).Replace(":","").Replace(".","-")
     } else {
       if ($xmlLine[$thread]) {
+        #Write-host ("Adding: " + $xmlPart)
         $xmlLine[$thread] = $xmlLine[$thread] + $xmlPart
       } else {
         # We missed the initial index, ignoring the entire conversation
@@ -232,11 +236,7 @@ while (-not $sr.EndOfStream) {
         Continue
       }
     }
-
-    if ($xmlLine[$thread] -match "connection.lation") {
-      Write-host ""
-    }
-    
+ 
     # Process extra content not included in the [SOAP] line
     $line = $sr.ReadLine()
     $lines = $lines + 1
@@ -248,13 +248,11 @@ while (-not $sr.EndOfStream) {
 
       if ($line.Length -gt 1) {
         if (($line.Length -gt 25) -and ($line.Substring(0,25) -match "[A-Fa-f0-9]{4,5}.[A-Fa-f0-9]{4,5}::")) { break }  # If this is a trace line and not extra content it will treat this appropriately
-        #if ($line.Substring($line.Length-2, 2) -eq "  ") { # 20210319 Removing only two training spaces, if there are three we have to leave one. Earlier it was coded to remove only one space, not sure if something changed with trace parsing or with OS version. I may have fixed something and breaked something else
-        #  $line=$line.Substring(0, $line.Length-2)
-        #}
         $xmlPart = (TrimTrailing $line $TrimStr)
+        $xmlLine[$thread] = $xmlLine[$thread] + $xmlPart
       }
-      $xmlLine[$thread] = $xmlLine[$thread] + $xmlPart
-      $line = $sr.ReadLine().TrimEnd()
+      
+      $line = $sr.ReadLine()
       $lines = $lines + 1
     }
 
@@ -371,6 +369,7 @@ while (-not $sr.EndOfStream) {
             $rowStats.Events = $row.Items
             $rowStats.EvtFirst = ToLocalTime $evtFirst
             $rowStats.EvtLast = ToLocalTime $evtLast
+            $rowStats.PktPrc = 0
             $tbStats.Rows.Add($rowStats)
           } else {
             $aSrv[0].LastPacket = ToTime $time
@@ -547,6 +546,10 @@ while (-not $sr.EndOfStream) {
       if ($aRel) {
         $duration = New-TimeSpan -Start (ToTime $aRel[0].Time) -End (ToTime $time)
         $row.OperationTimeout = $duration.TotalMilliseconds
+        $aStats = $tbStats.Select("Server = '" + $Computer + "'")
+        if ($aStats) {
+          $aStats[0].PktPrc += $duration.TotalMilliseconds
+        }
       }
     } else {
       $row.OperationTimeout = $xmlEvt.Envelope.Header.OperationTimeout
@@ -662,6 +665,7 @@ foreach ($row in $tbStats.Rows) {
   $tbStats.Rows[$nRow].DelayEnd = ("{0:g}” -f (New-TimeSpan -Start $row.EvtLast -End $row.LastPacket))
   $tbStats.Rows[$nRow].EvtSecPkt = [math]::Round($row.Events / $SpanPkt.TotalSeconds)
   $tbStats.Rows[$nRow].EvtSecSrv = [math]::Round($row.Events / $SpanEvt.TotalSeconds)
+  $tbStats.Rows[$nRow].AvgmsPkt = [math]::Round($row.PktPrc / $row.Pckts)
   $nRow++
 }
 
