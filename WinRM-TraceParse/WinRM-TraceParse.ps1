@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20210304
+# Version 20210322
 
 param (
   [string]$InputFile
@@ -17,6 +17,18 @@ Function Write-Error {
   $msg = (get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " " + $msg
   Write-Host $msg
   $msg | Out-File -FilePath ($dirName + "\script-errors.txt") -Append
+}
+
+Function TrimTrailing {
+  param ( [string] $InputStr,
+          [string] $TrimStr )
+
+  $TrimLen = $TrimStr.Length
+  if ($InputStr.Substring($InputStr.Length - $TrimLen, $TrimLen) -eq $TrimStr) {
+    return $InputStr.Substring(0, $InputStr.Length - $TrimLen)
+  } else {
+    return $InputStr
+  }
 }
 
 Function ToTime{
@@ -159,6 +171,7 @@ $col = New-Object system.Data.DataColumn EvtSecSrv,([string]); $tbStats.Columns.
 $col = New-Object system.Data.DataColumn DelayStart,([string]); $tbStats.Columns.Add($col)
 $col = New-Object system.Data.DataColumn DelayEnd,([string]); $tbStats.Columns.Add($col)
 
+$TrimStr = "  "
 $dtStart = Get-Date
 $TZName = (Get-WmiObject win32_timezone).StandardName
 $TZ = [System.TimeZoneInfo]::FindSystemTimeZoneById($TZName)
@@ -194,15 +207,9 @@ while (-not $sr.EndOfStream) {
     }
 
     $nPos = $line.IndexOf("bytes)] ")
-
-    if ($line -match "10988379") {
-
-    #$xmlPart = $line.Substring($nPos+8, $line.Length - $nPos - 8).TrimEnd() 20210319 Removed trimming because it was breaking tags
     $xmlPart = $line.Substring($nPos+8, $line.Length - $nPos - 8)
     if ($xmlPart.Length -gt 1) {
-      if ($xmlPart.Substring($xmlPart.Length-2, 2) -eq "  ") {  # 20210319 Removing only two training spaces, if there are three we have to leave one. Earlier it was coded to remove only one space, not sure if something changed with trace parsing or with OS version. I may have fixed something and breaked something else
-        $xmlPart = $xmlPart.Substring(0,$xmlPart.Length - 2)
-      }
+      $xmlPart = (TrimTrailing $xmlPart $TrimStr)
     }
 
     # This is one of the SOAP lines
@@ -225,20 +232,28 @@ while (-not $sr.EndOfStream) {
         Continue
       }
     }
+
+    if ($xmlLine[$thread] -match "connection.lation") {
+      Write-host ""
+    }
     
     # Process extra content not included in the [SOAP] line
-    # $line = $sr.ReadLine().TrimEnd() 20210319 Removed the trimming because it was breaking tags
     $line = $sr.ReadLine()
     $lines = $lines + 1
 
     while (-not $sr.EndOfStream) {
+      if ($line -match "09:00:11.4410964") {
+        write-host ""
+      }
+
       if ($line.Length -gt 1) {
         if (($line.Length -gt 25) -and ($line.Substring(0,25) -match "[A-Fa-f0-9]{4,5}.[A-Fa-f0-9]{4,5}::")) { break }  # If this is a trace line and not extra content it will treat this appropriately
-        if ($line.Substring($line.Length-2, 2) -eq "  ") { # 20210319 Removing only two training spaces, if there are three we have to leave one. Earlier it was coded to remove only one space, not sure if something changed with trace parsing or with OS version. I may have fixed something and breaked something else
-          $line=$line.Substring(0, $line.Length-2)
-        }
+        #if ($line.Substring($line.Length-2, 2) -eq "  ") { # 20210319 Removing only two training spaces, if there are three we have to leave one. Earlier it was coded to remove only one space, not sure if something changed with trace parsing or with OS version. I may have fixed something and breaked something else
+        #  $line=$line.Substring(0, $line.Length-2)
+        #}
+        $xmlPart = (TrimTrailing $line $TrimStr)
       }
-      $xmlLine[$thread] = $xmlLine[$thread] + $line
+      $xmlLine[$thread] = $xmlLine[$thread] + $xmlPart
       $line = $sr.ReadLine().TrimEnd()
       $lines = $lines + 1
     }
