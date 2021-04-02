@@ -1,8 +1,9 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20210322
+# Version 20210402
 
 param (
-  [string]$InputFile
+  [string]$InputFile,
+  [switch]$OneTrailingSpace
 )
 
 Function ReadLine {
@@ -173,7 +174,13 @@ $col = New-Object system.Data.DataColumn DelayEnd,([string]); $tbStats.Columns.A
 $col = New-Object system.Data.DataColumn PktPrc,([long]); $tbStats.Columns.Add($col)
 $col = New-Object system.Data.DataColumn AvgmsPkt,([long]); $tbStats.Columns.Add($col)
 
-$TrimStr = "  "
+if ($OneTrailingSpace) {
+  $TrimStr = " "
+} else {
+  $TrimStr = "  "
+}
+$nErrors = 0
+$maxErrors = 10
 $dtStart = Get-Date
 $TZName = (Get-WmiObject win32_timezone).StandardName
 $TZ = [System.TimeZoneInfo]::FindSystemTimeZoneById($TZName)
@@ -242,10 +249,6 @@ while (-not $sr.EndOfStream) {
     $lines = $lines + 1
 
     while (-not $sr.EndOfStream) {
-      if ($line -match "09:00:11.4410964") {
-        write-host ""
-      }
-
       if ($line.Length -gt 1) {
         if (($line.Length -gt 25) -and ($line.Substring(0,25) -match "[A-Fa-f0-9]{4,5}.[A-Fa-f0-9]{4,5}::")) { break }  # If this is a trace line and not extra content it will treat this appropriately
         $xmlPart = (TrimTrailing $line $TrimStr)
@@ -298,6 +301,7 @@ while (-not $sr.EndOfStream) {
       catch {
         Write-Error $PSItem.Exception 
         Write-Error $xmlLine.Values
+        $nErrors++
       }
       $xmlLine.Remove($thread)
 
@@ -343,6 +347,7 @@ while (-not $sr.EndOfStream) {
           catch {
             Write-Error $PSItem.Exception 
             Write-Error $xmlEvt.Envelope.Body.Events.FirstChild.'#cdata-section'
+            $nErrors++
           }
           $evtFirst = $xmlpl.Event.System.TimeCreated.SystemTime
           $row.dates = $evtFirst + " - "
@@ -353,6 +358,7 @@ while (-not $sr.EndOfStream) {
           catch {
             Write-Error $PSItem.Exception 
             Write-Error $xmlEvt.Envelope.Body.Events.LastChild.'#cdata-section'
+            $nErrors++
           }
           $evtLast = $xmlpl.Event.System.TimeCreated.SystemTime
           $row.dates = $row.dates + $evtLast
@@ -617,8 +623,6 @@ while (-not $sr.EndOfStream) {
       $rowHTTP = $tbHTTP.NewRow()
       $rowHTTP.Time = $LP.Time
       $rowHTTP.SysTID = $LP.TID
-      #$rowHTTP.RequestID = """" + (FindSep -FindIn $line -Left "(request ID " -Right ")") + """"
-      #$rowHTTP.ConnectionID = """" + (FindSep -FindIn $line -Left "(connection ID " -Right ")") + """"
       $rowHTTP.RequestID = ":" + (FindSep -FindIn $line -Left "(request ID " -Right ")")
       $rowHTTP.ConnectionID = ":" + (FindSep -FindIn $line -Left "(connection ID " -Right ")")
       $rowHTTP.RemoteAddress = ConvertIP (FindSep -FindIn $line -Left "from remote address " -Right ". ")
@@ -650,6 +654,21 @@ while (-not $sr.EndOfStream) {
   } else {
     $line = $sr.ReadLine()
     $lines = $lines + 1
+  }
+
+  if ($nErrors -gt $maxErrors) {
+    if ($TrimStr -eq "  ") {
+      Write-Host "Too many errors, trying again with one trailing space"
+      $TrimStr = " "
+      $nErrors = 0
+      $sr.Close()
+      $sr = new-object System.io.streamreader(get-item $InputFile)
+      $line = $sr.ReadLine()
+      $lines = 1
+      Remove-Item $dirName -Recurse
+      $dirName = $InputFile + "-" + $(get-date -f yyyyMMdd_HHmmss)
+      New-Item -itemtype directory -path $dirname | Out-Null
+    }
   }
 }
 
