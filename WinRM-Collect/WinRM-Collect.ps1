@@ -1,5 +1,5 @@
-$version = "WinRM-Collect (20201124)"
-$DiagVersion = "WinRM-Diag (20200309)"
+$version = "WinRM-Collect (20210402)"
+$DiagVersion = "WinRM-Diag (20210331)"
 
 # by Gianni Bragante - gbrag@microsoft.com
 
@@ -1135,6 +1135,17 @@ foreach ($sub in $Subscriptions) {
   $SubProp = ($sub | Get-ItemProperty)
   Write-Diag ("[INFO]   SubscriptionType = " + $SubProp.SubscriptionType + ", ConfigurationMode = " + $SubProp.ConfigurationMode)
   Write-Diag ("[INFO]   MaxLatencyTime = " + (GetSubVal $sub.PSChildname "MaxLatencyTime") + ", HeartBeatInterval = " + (GetSubVal $sub.PSChildname "HeartBeatInterval"))
+
+  if ($SubProp.AllowedSourceDomainComputers) {
+    Write-Diag "[INFO]   AllowedSourceDomainComputers"
+    $ACL = (FindSep -FindIn $SubProp.AllowedSourceDomainComputers -Left ":P" -Right ")S:").replace(")(", ",").Split(",")
+    foreach ($ACE in $ACL) {
+      $SID = FindSep -FindIn $ACE -left ";;;"
+      $objSID = New-Object System.Security.Principal.SecurityIdentifier($SID)
+      $group = $objSID.Translate( [System.Security.Principal.NTAccount]).Value
+      Write-Diag "[INFO]      $group ($SID)"
+    }
+  }
 
   if ($SubProp.Locale) {
     if ($SubProp.Locale -eq "en-US") {
