@@ -1,8 +1,8 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20210402
+# Version 20210407
 
 param (
-  [string]$InputFile,
+  [string]$InputFile ,
   [switch]$OneTrailingSpace
 )
 
@@ -220,10 +220,11 @@ while (-not $sr.EndOfStream) {
     if ($xmlPart.Length -gt 1) {
       $xmlPart = (TrimTrailing $xmlPart $TrimStr)
     }
-
+    $chunkIndex = (FindSep -FindIn $line -Left "index " -right " total").Split(" ")
 
     # This is one of the SOAP lines
-    if ($line -match  "index 1 of") {
+    # if ($line -match  "index 1 of") {
+    if ($chunkIndex[0] -eq 1) {
       if ($xmlLine[$thread]) {
         Write-Error ("Unclosed tag for thread " + $thread + " before " + $time)
         $xmlLine.Remove($thread)
@@ -260,7 +261,8 @@ while (-not $sr.EndOfStream) {
     }
 
     # Closing tag detection
-    if (($xmlLine[$thread].Substring($xmlLine[$thread].Length-20) -match "</s:Envelope>") -or ($xmlLine[$thread].Substring($xmlLine[$thread].Length-20) -match "</env:Envelope>")) {
+    # if (($xmlLine[$thread].Substring($xmlLine[$thread].Length-20) -match "</s:Envelope>") -or ($xmlLine[$thread].Substring($xmlLine[$thread].Length-20) -match "</env:Envelope>")) {
+    if ($chunkIndex[0] -eq $chunkIndex[2]) {
       $filename = "out-" + $timeFile + "-" + $msgtype + ".xml"
 
       # Trimming the lines containing two SOAP packets
