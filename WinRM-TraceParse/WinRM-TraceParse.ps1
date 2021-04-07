@@ -288,14 +288,14 @@ while (-not $sr.EndOfStream) {
       $xmlT = New-Object -TypeName System.Xml.XmlDocument
 
       # Fixing tags broken by trimming
-      $xmlLine[$thread] = $xmlLine[$thread].Replace("w:EventAction=", "w:Event Action=")
-      $xmlLine[$thread] = $xmlLine[$thread].Replace("<DataName=", "<Data Name=")
-      $xmlLine[$thread] = $xmlLine[$thread].Replace("xsi:", " xsi:")
-      $xmlLine[$thread] = $xmlLine[$thread].Replace("Name=""", " Name=""")
-      $xmlLine[$thread] = $xmlLine[$thread].Replace("NANME=""", " NAME=""")
-      $xmlLine[$thread] = $xmlLine[$thread].Replace("xmlns:", " xmlns:")
-      $xmlLine[$thread] = $xmlLine[$thread].Replace("s:mustUnderstand", " s:mustUnderstand")
-      $xmlLine[$thread] = $xmlLine[$thread].Replace("IsCurrent=", " IsCurrent=")
+      #$xmlLine[$thread] = $xmlLine[$thread].Replace("w:EventAction=", "w:Event Action=")
+      #$xmlLine[$thread] = $xmlLine[$thread].Replace("<DataName=", "<Data Name=")
+      #$xmlLine[$thread] = $xmlLine[$thread].Replace("xsi:", " xsi:")
+      #$xmlLine[$thread] = $xmlLine[$thread].Replace("Name=""", " Name=""")
+      #$xmlLine[$thread] = $xmlLine[$thread].Replace("NANME=""", " NAME=""")
+      #$xmlLine[$thread] = $xmlLine[$thread].Replace("xmlns:", " xmlns:")
+      #$xmlLine[$thread] = $xmlLine[$thread].Replace("s:mustUnderstand", " s:mustUnderstand")
+      #$xmlLine[$thread] = $xmlLine[$thread].Replace("IsCurrent=", " IsCurrent=")
 
       try {
         $xmlEvt.LoadXml($xmlLine[$thread])
