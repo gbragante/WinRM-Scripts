@@ -1,4 +1,4 @@
-$DiagVersion = "WinRM-Diag (20210331)"
+$DiagVersion = "WinRM-Diag (20200415)"
 # by Gianni Bragante gbrag@microsoft.com
 
 Function FindSep {
@@ -162,6 +162,19 @@ $tbcert | Export-Csv ($resDir + "\certificates.tsv") -noType -Delimiter "`t"
 
 # Diag start
 
+Write-Diag "[INFO] Checking HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\Schannel\ClientAuthTrustMode"
+$ClientAuthTrustMode = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\Schannel" | Select-Object -ExpandProperty "ClientAuthTrustMode" -ErrorAction SilentlyContinue)
+
+if ($ClientAuthTrustMode -eq $null -or $ClientAuthTrustMode -eq 0) {
+  Write-Diag "[WARNING]   0 Machine Trust (default) - Requires that the client certificate is issued by a certificate in the Trusted Issuers list."  
+} elseif ($ClientAuthTrustMode -eq 1) {
+  Write-Diag "[WARNING]   1 Exclusive Root Trust - Requires that a client certificate chains to a root certificate contained in the caller-specified trusted issuer store. The certificate must also be issued by an issuer in the Trusted Issuers list"  
+} elseif ($ClientAuthTrustMode -eq 2) {
+  Write-Diag "[INFO]   2 Exclusive CA Trust - Requires that a client certificate chain to either an intermediate CA certificate or root certificate in the caller-specified trusted issuer store."  
+} else {
+  Write-Diag ("[ERROR]   Invalid value " + $ClientAuthTrustMode)
+}
+
 $OSVer = [environment]::OSVersion.Version.Major + [environment]::OSVersion.Version.Minor * 0.1
 
 $subDom = $false
@@ -229,6 +242,16 @@ foreach ($sub in $Subscriptions) {
     Write-Diag ("[INFO]   No sources found for the subscription " + $sub.Name)
   }
 }
+
+if ($Subscriptions) {
+ $EventLost = (Get-Counter "\\$env:computername\Event Tracing for Windows Session(EventLog-ForwardedEvents)\Events Lost").CounterSamples[0].CookedValue
+  if ($EventLost -gt 100) {
+    Write-Diag ("[WARNING] " + $EventLost + " events lost for EventLog-ForwardedEvents")
+  } else {
+    Write-Diag ("[INFO] " + $EventLost + " events lost for EventLog-ForwardedEvents")
+  }
+}
+
 
 if ($OSVer -gt 6.1) {
   Write-Diag "[INFO] Retrieving machine's IP addresses"
@@ -581,3 +604,4 @@ if (Test-Path -path $dir) {
     Write-Diag ("[INFO] The folder " + $dir + " is using " + $size.ToString() + " MB of disk space")
   }
 }
+
