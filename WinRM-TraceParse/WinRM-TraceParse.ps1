@@ -1,8 +1,8 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20210407
+# Version 20210419
 
 param (
-  [string]$InputFile ,
+  [string]$InputFile,
   [switch]$OneTrailingSpace
 )
 
@@ -229,15 +229,18 @@ while (-not $sr.EndOfStream) {
         Write-Error ("Unclosed tag for thread " + $thread + " before " + $time)
         $xmlLine.Remove($thread)
       }
-      $xmlLine.Add($thread,$xmlpart)
+      $sb = [System.Text.StringBuilder]::new()
+      [void]$sb.Append($xmlpart) 
+      $xmlLine.Add($thread,$sb)
+      #sb $xmlLine.Add($thread,$xmlpart)
       
       $npos=$line.IndexOf("::")
       $time = ($line.Substring($nPos + 2 , 25))
       $timeFile = $time.Substring(9).Replace(":","").Replace(".","-")
     } else {
       if ($xmlLine[$thread]) {
-        #Write-host ("Adding: " + $xmlPart)
-        $xmlLine[$thread] = $xmlLine[$thread] + $xmlPart
+        #sb $xmlLine[$thread] = $xmlLine[$thread] + $xmlPart
+        [void]$xmlLine[$thread].Append($xmlPart)
       } else {
         # We missed the initial index, ignoring the entire conversation
         $line = $sr.ReadLine()
@@ -253,7 +256,8 @@ while (-not $sr.EndOfStream) {
       if ($line.Length -gt 1) {
         if (($line.Length -gt 25) -and ($line.Substring(0,25) -match "[A-Fa-f0-9]{4,5}.[A-Fa-f0-9]{4,5}::")) { break }  # If this is a trace line and not extra content it will treat this appropriately
         $xmlPart = (TrimTrailing $line $TrimStr)
-        $xmlLine[$thread] = $xmlLine[$thread] + $xmlPart
+        #sb $xmlLine[$thread] = $xmlLine[$thread] + $xmlPart
+        [void]$xmlLine[$thread].Append($xmlPart) 
       }
       
       $line = $sr.ReadLine()
@@ -271,16 +275,19 @@ while (-not $sr.EndOfStream) {
       # When they are nested it is ok, for example for subscriptions
       # When there are two packet in the same SOAP envelope they are often related to the same operation, so it is ok to discard the second.
 
-      if (-not $xmlLine[$thread] -match "EnumerateResponse") {
-        $ClosePos = $xmlLine[$thread].IndexOf("</s:Envelope>")
+      #sb if (-not $xmlLine[$thread] -match "EnumerateResponse") {
+      $xmlPkt = $xmlLine[$thread].ToString()
+      if (-not $xmlPkt -match "EnumerateResponse") {
+        #sb $ClosePos = $xmlLine[$thread].IndexOf("</s:Envelope>")
+        $ClosePos = $xmlPkt.IndexOf("</s:Envelope>")
         if ($ClosePos) {
-          if ($ClosePos + 13 -ne $xmlLine[$thread].Length) {
-            $xmlLine[$thread] = $xmlLine[$thread].Substring(0, $ClosePos + 13)
+          if ($ClosePos + 13 -ne $xmlPkt.Length) {
+            $xmlPkt = $xmlPkt.Substring(0, $ClosePos + 13)
           }
         }
       }
 
-      $xmlLine[$thread] | Out-File -FilePath ($dirName + "\" + $FileName) 
+      $xmlPkt | Out-File -FilePath ($dirName + "\" + $FileName) 
 
       $xmlEvt = New-Object -TypeName System.Xml.XmlDocument
       $xmlPL = New-Object -TypeName System.Xml.XmlDocument
@@ -298,7 +305,7 @@ while (-not $sr.EndOfStream) {
       #$xmlLine[$thread] = $xmlLine[$thread].Replace("IsCurrent=", " IsCurrent=")
 
       try {
-        $xmlEvt.LoadXml($xmlLine[$thread])
+        $xmlEvt.LoadXml($xmlPkt)
       }
       catch {
         Write-Error $PSItem.Exception 
