@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20210419
+# Version 20210420
 
 param (
   [string]$InputFile,
@@ -179,6 +179,8 @@ if ($OneTrailingSpace) {
 } else {
   $TrimStr = "  "
 }
+$TotEvents = 0
+$TotPkt = 0
 $nErrors = 0
 $maxErrors = 10
 $dtStart = Get-Date
@@ -306,6 +308,7 @@ while (-not $sr.EndOfStream) {
 
       try {
         $xmlEvt.LoadXml($xmlPkt)
+        $TotPkt++
       }
       catch {
         Write-Error $PSItem.Exception 
@@ -344,6 +347,7 @@ while (-not $sr.EndOfStream) {
         $row.Bookmarks = $blist
         if ($xmlEvt.Envelope.body.Events.Event.count) {
           $row.Items = $xmlEvt.Envelope.body.Events.Event.count
+          $TotEvents += $row.Items
         } else {
           $row.Items = 1
         }
@@ -711,3 +715,4 @@ $tbHTTP | Export-Csv ($dirName + "\HTTP-" + (Get-Item $InputFile).BaseName +".ts
 
 $duration = New-TimeSpan -Start $dtStart -End (Get-Date)
 Write-Host "Execution completed in" $duration
+Write-host ("Trace parser performance: " + ($TotEvents / $duration.TotalSeconds) + " evt/sec, " + ($TotPkt / $duration.TotalSeconds) + " pkt/sec")
