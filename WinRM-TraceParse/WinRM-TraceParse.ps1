@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20210420
+# Version 20210428
 
 param (
   [string]$InputFile,
@@ -473,6 +473,18 @@ while (-not $sr.EndOfStream) {
       } elseif ($row.Message -eq "Subscribe") {
         $row.Command = $xmlEvt.Envelope.Header.OptionSet.FirstChild.'#text'
         # maybe also add the subscription details here
+
+      } elseif ($row.Message -eq "TestConfiguration_INPUT") {
+        $ShellXML = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($xmlEvt.Envelope.Body.TestConfiguration_INPUT.ConfigurationData.'#text'))
+        if ($ShellXML) {
+          $fileshell = $dirName + "\" + $FileName.Replace("xml","DSCTest.txt")
+          $ShellXML | Out-File -FilePath $fileshell -Encoding ascii
+        }
+
+      } elseif ($row.Message -eq "InteractiveEvent") {
+        $row.Command = $xmlEvt.Envelope.Body.InteractiveEvent.EventType + " - " + $xmlEvt.Envelope.Body.InteractiveEvent.Description
+        Write-Host ""
+
       } elseif ($xmlEvt.Envelope.Header.ResourceURI.'#text') {
         if ($xmlEvt.Envelope.Header.ResourceURI.'#text'.IndexOf("cim-schema") -gt 0) {
           $cmdWMI = ""
@@ -558,7 +570,9 @@ while (-not $sr.EndOfStream) {
       $ActID = $aRel[0].ActivityID
       $OpId = $aRel[0].OperationID
       $computer = $aRel[0].Computer
-      $row.Command = $aRel[0].Command
+      if (($aRel[0].Command.GetType()).Name -ne "DBNull") {
+        $row.Command = $aRel[0].Command
+      }
       if (-not $row.EnumerationContext) {
         $row.EnumerationContext = $aRel[0].EnumerationContext
       }
