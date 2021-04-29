@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20210428
+# Version 20210429
 
 param (
   [string]$InputFile,
@@ -483,7 +483,9 @@ while (-not $sr.EndOfStream) {
 
       } elseif ($row.Message -eq "InteractiveEvent") {
         $row.Command = $xmlEvt.Envelope.Body.InteractiveEvent.EventType + " - " + $xmlEvt.Envelope.Body.InteractiveEvent.Description
-        Write-Host ""
+
+      } elseif ($row.Message -eq "ApplyConfiguration_INPUT") {
+        $row.Message = $row.Message  # We just want to leave $row.Command Null
 
       } elseif ($xmlEvt.Envelope.Header.ResourceURI.'#text') {
         if ($xmlEvt.Envelope.Header.ResourceURI.'#text'.IndexOf("cim-schema") -gt 0) {
