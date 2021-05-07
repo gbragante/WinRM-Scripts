@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20210429
+# Version 20210507
 
 param (
   [string]$InputFile,
@@ -324,9 +324,13 @@ while (-not $sr.EndOfStream) {
       $row.Type = $msgtype
       $row.FileSize = (Get-Item ($dirName + "\" + $FileName)).Length
       
-      $row.Message = $xmlEvt.Envelope.Body.FirstChild.LocalName
-      if ($row.Message -eq "Fault") {
-        $row.Message = $xmlEvt.Envelope.Body.Fault.Reason.text.'#text'
+      if ($xmlEvt.Envelope.Body.FirstChild.LocalName) {
+        $row.Message = $xmlEvt.Envelope.Body.FirstChild.LocalName
+        if ($row.Message -eq "Fault") {
+          $row.Message = $xmlEvt.Envelope.Body.Fault.Reason.text.'#text'
+        }
+      } else {
+        $row.Message = ($xmlEvt.Envelope.Header.Action | Split-Path -Leaf)
       }
 
       if ($xmlEvt.Envelope.Header.MessageID.HasAttributes) {
@@ -417,14 +421,18 @@ while (-not $sr.EndOfStream) {
           }
         } elseif ($xmlEvt.Envelope.body.EnumerateResponse.Items.FirstChild.Name -eq "w:Item") {
           $row.Items = $xmlEvt.Envelope.body.EnumerateResponse.Items.ChildNodes.Count
+          if ($xmlEvt.Envelope.Body.EnumerateResponse.EnumerationContext) {
+            $row.EnumerationContext = $xmlEvt.Envelope.Body.EnumerateResponse.EnumerationContext.substring(5) 
+            $aRel = $tbEvt.Select("MessageID = '" + $xmlEvt.Envelope.Header.RelatesTo.substring(5) + "'")
+            $aRel[0].EnumerationContext = $row.EnumerationContext
+          }
         }
-        if ($xmlEvt.Envelope.Body.EnumerateResponse.EnumerationContext) {
-          $row.EnumerationContext = $xmlEvt.Envelope.Body.EnumerateResponse.EnumerationContext.substring(5) 
-        }
+
       } elseif ($row.Message -eq "Enumerate") {
         $Computer = $xmlEvt.Envelope.Header.MachineID.'#text'
         $row.Command = $xmlevt.Envelope.Header.SelectorSet.Selector.'#text' + " " +  $xmlEvt.Envelope.Body.Enumerate.Filter.'#text'
         $row.RetObj = $xmlEvt.Envelope.Header.ResourceURI.'#text'.substring($xmlEvt.Envelope.Header.ResourceURI.'#text'.LastIndexOf("/")+1)
+
       } elseif ($row.Message -eq "Pull") {
         if ($xmlEvt.Envelope.Header.SelectorSet.Selector.Name -eq "__cimnamespace") {
           $row.Command = $xmlevt.Envelope.Header.SelectorSet.Selector.'#text'
@@ -434,12 +442,19 @@ while (-not $sr.EndOfStream) {
         } elseif ($row.Command = $xmlEvt.Envelope.Header.OptionSet.FirstChild.'#text') {
           $row.Command = $xmlEvt.Envelope.Header.OptionSet.FirstChild.'#text'
         } 
+
       } elseif ($row.Message -eq "PullResponse") {
         $row.RetObj = $xmlEvt.Envelope.Body.PullResponse.Items.FirstChild.FirstChild.name
         $row.Items = $xmlEvt.Envelope.body.PullResponse.Items.ChildNodes.Count
         if ($xmlEvt.Envelope.Body.PullResponse.EnumerationContext) {
           $row.EnumerationContext = $xmlEvt.Envelope.Body.PullResponse.EnumerationContext.Substring(5)
         }
+
+      } elseif ($row.Message -eq "Release") {
+        if ($xmlEvt.Envelope.Body.Release.EnumerationContext) {
+          $row.EnumerationContext = $xmlEvt.Envelope.Body.Release.EnumerationContext.'#text'.Substring(5)
+        }
+
       } elseif ($row.Message -eq "CommandLine") {
         $row.Command = $xmlEvt.Envelope.body.CommandLine.Command
         if (($xmlEvt.Envelope.Body.CommandLine.Arguments) -and ($xmlEvt.Envelope.Body.CommandLine.Arguments -match "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)?$")) {
@@ -563,7 +578,10 @@ while (-not $sr.EndOfStream) {
 
     $To = $xmlEvt.Envelope.Header.To
 
-    if ($relTo) {
+    if ($relTo) {  # Completing the response packet with information from the request packet
+      if ($row.Message -eq "ReleaseResponse") {
+        Write-Host ""
+      }
       $aRel = $tbEvt.Select("MessageID = '" + $relTo + "'")
       $To = $aRel[0].To
       $SessID = $aRel[0].SessionID
@@ -575,9 +593,11 @@ while (-not $sr.EndOfStream) {
       if (($aRel[0].Command.GetType()).Name -ne "DBNull") {
         $row.Command = $aRel[0].Command
       }
+
       if (-not $row.EnumerationContext) {
         $row.EnumerationContext = $aRel[0].EnumerationContext
       }
+
       if ($aRel) {
         $duration = New-TimeSpan -Start (ToTime $aRel[0].Time) -End (ToTime $time)
         $row.OperationTimeout = $duration.TotalMilliseconds
