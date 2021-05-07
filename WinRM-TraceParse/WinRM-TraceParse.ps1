@@ -455,6 +455,9 @@ while (-not $sr.EndOfStream) {
           $row.EnumerationContext = $xmlEvt.Envelope.Body.Release.EnumerationContext.'#text'.Substring(5)
         }
 
+      } elseif ($row.Message -eq "ReleaseResponse") {
+        $row.EnumerationContext = $row.EnumerationContext  # we just want to leave EnumerationContext empty to up updated later from the RelatedTo
+
       } elseif ($row.Message -eq "CommandLine") {
         $row.Command = $xmlEvt.Envelope.body.CommandLine.Command
         if (($xmlEvt.Envelope.Body.CommandLine.Arguments) -and ($xmlEvt.Envelope.Body.CommandLine.Arguments -match "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)?$")) {
@@ -579,9 +582,6 @@ while (-not $sr.EndOfStream) {
     $To = $xmlEvt.Envelope.Header.To
 
     if ($relTo) {  # Completing the response packet with information from the request packet
-      if ($row.Message -eq "ReleaseResponse") {
-        Write-Host ""
-      }
       $aRel = $tbEvt.Select("MessageID = '" + $relTo + "'")
       $To = $aRel[0].To
       $SessID = $aRel[0].SessionID
@@ -594,7 +594,7 @@ while (-not $sr.EndOfStream) {
         $row.Command = $aRel[0].Command
       }
 
-      if (-not $row.EnumerationContext) {
+      if ($row.EnumerationContext.GetType().Name -eq "DBNull") {
         $row.EnumerationContext = $aRel[0].EnumerationContext
       }
 
