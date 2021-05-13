@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20210507
+# Version 20210513
 
 param (
   [string]$InputFile,
@@ -295,16 +295,6 @@ while (-not $sr.EndOfStream) {
       $xmlPL = New-Object -TypeName System.Xml.XmlDocument
       $xmlShell = New-Object -TypeName System.Xml.XmlDocument
       $xmlT = New-Object -TypeName System.Xml.XmlDocument
-
-      # Fixing tags broken by trimming
-      #$xmlLine[$thread] = $xmlLine[$thread].Replace("w:EventAction=", "w:Event Action=")
-      #$xmlLine[$thread] = $xmlLine[$thread].Replace("<DataName=", "<Data Name=")
-      #$xmlLine[$thread] = $xmlLine[$thread].Replace("xsi:", " xsi:")
-      #$xmlLine[$thread] = $xmlLine[$thread].Replace("Name=""", " Name=""")
-      #$xmlLine[$thread] = $xmlLine[$thread].Replace("NANME=""", " NAME=""")
-      #$xmlLine[$thread] = $xmlLine[$thread].Replace("xmlns:", " xmlns:")
-      #$xmlLine[$thread] = $xmlLine[$thread].Replace("s:mustUnderstand", " s:mustUnderstand")
-      #$xmlLine[$thread] = $xmlLine[$thread].Replace("IsCurrent=", " IsCurrent=")
 
       try {
         $xmlEvt.LoadXml($xmlPkt)
@@ -700,6 +690,37 @@ while (-not $sr.EndOfStream) {
 
     $line = $sr.ReadLine()
     $lines = $lines + 1
+
+  } elseif ($line -match  "CRequestContext::GetFaultXMLPrivate()") {
+    $faultxml = FindSep $line -Left "fault string: "
+    $xmlFault = New-Object -TypeName System.Xml.XmlDocument
+    $xmlFault.LoadXml($faultxml)
+    $LP = LineParam
+
+    $filename = "out-" + $LP.time.Substring(9).Replace(":","").Replace(".","-") + "-FT.xml" 
+    $faultxml | Out-File -FilePath ($dirName + "\" + $FileName) 
+
+    $row = $tbEvt.NewRow()
+    $row.Time = $LP.Time
+    $row.Pid = $LP.PID
+    $row.Tid = $LP.TID
+    $row.Type = "FT"
+    $row.Action = $xmlFault.WSManFault.f
+    $row.Computer = $xmlfault.WSManFault.Machine
+    $row.FileName = $filename
+    $row.FileSize = $faultxml.Length
+
+    if ($xmlfault.WSManFault.Message.ProviderFault) {
+      $row.Message = $xmlfault.WSManFault.Message.ProviderFault.WSManFault.Code + " - " + $xmlfault.WSManFault.Message.ProviderFault.provider + " - " + $xmlfault.WSManFault.Message.ProviderFault.WSManFault.Message
+    } else {
+      $row.Message = $xmlfault.WSManFault.Code + " - " + $xmlfault.WSManFault.Message
+    }
+
+    $tbEvt.Rows.Add($row)
+
+    $line = $sr.ReadLine()
+    $lines = $lines + 1
+
   } else {
     $line = $sr.ReadLine()
     $lines = $lines + 1
