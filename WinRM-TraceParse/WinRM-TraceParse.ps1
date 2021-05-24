@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20210513
+# Version 20210524
 
 param (
   [string]$InputFile,
@@ -573,22 +573,22 @@ while (-not $sr.EndOfStream) {
 
     if ($relTo) {  # Completing the response packet with information from the request packet
       $aRel = $tbEvt.Select("MessageID = '" + $relTo + "'")
-      $To = $aRel[0].To
-      $SessID = $aRel[0].SessionID
-      $ShlID = $aRel[0].ShellID
-      $cmdID = $aRel[0].CommandID
-      $ActID = $aRel[0].ActivityID
-      $OpId = $aRel[0].OperationID
-      $computer = $aRel[0].Computer
-      if (($aRel[0].Command.GetType()).Name -ne "DBNull") {
-        $row.Command = $aRel[0].Command
-      }
-
-      if ($row.EnumerationContext.GetType().Name -eq "DBNull") {
-        $row.EnumerationContext = $aRel[0].EnumerationContext
-      }
-
       if ($aRel) {
+        $To = $aRel[0].To
+        $SessID = $aRel[0].SessionID
+        $ShlID = $aRel[0].ShellID
+        $cmdID = $aRel[0].CommandID
+        $ActID = $aRel[0].ActivityID
+        $OpId = $aRel[0].OperationID
+        $computer = $aRel[0].Computer
+        if (($aRel[0].Command.GetType()).Name -ne "DBNull") {
+          $row.Command = $aRel[0].Command
+        }
+
+        if ($row.EnumerationContext.GetType().Name -eq "DBNull") {
+          $row.EnumerationContext = $aRel[0].EnumerationContext
+        }
+
         $duration = New-TimeSpan -Start (ToTime $aRel[0].Time) -End (ToTime $time)
         $row.OperationTimeout = $duration.TotalMilliseconds
         $aStats = $tbStats.Select("Server = '" + $Computer + "'")
