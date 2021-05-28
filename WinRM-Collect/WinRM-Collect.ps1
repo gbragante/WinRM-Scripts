@@ -1,35 +1,13 @@
-$version = "WinRM-Collect (20210415)"
+$version = "WinRM-Collect (20210528)"
 $DiagVersion = "WinRM-Diag (20210415)"
 
 # by Gianni Bragante - gbrag@microsoft.com
 
-Function Write-Log {
+Function Write-Diag {
   param( [string] $msg )
   $msg = (get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " " + $msg
   Write-Host $msg
-  $msg | Out-File -FilePath $outfile -Append
-}
-
-Function ExecQuery {
-  param(
-    [string] $NameSpace,
-    [string] $Query
-  )
-  Write-Log ("Executing query " + $Query)
-  if ($PSVersionTable.psversion.ToString() -ge "3.0") {
-    $ret = Get-CimInstance -Namespace $NameSpace -Query $Query -ErrorAction Continue 2>>$errfile
-  } else {
-    $ret = Get-WmiObject -Namespace $NameSpace -Query $Query -ErrorAction Continue 2>>$errfile
-  }
-  Write-Log (($ret | measure).count.ToString() + " results")
-  return $ret
-}
-
-Function ArchiveLog {
-  param( [string] $LogName )
-  $cmd = "wevtutil al """+ $resDir + "\" + $env:computername + "-" + $LogName + ".evtx"" /l:en-us >>""" + $outfile + """ 2>>""" + $errfile + """"
-  Write-Log $cmd
-  Invoke-Expression $cmd
+  $msg | Out-File -FilePath $diagfile -Append
 }
 
 Function EvtLogDetails {
@@ -55,278 +33,6 @@ Function EvtLogDetails {
     "Newest " + $evt.TimeCreated + " (" + $evt.RecordID + ")" | Out-File -FilePath ($resDir + "\EventLogs.txt") -Append
     "" | Out-File -FilePath ($resDir + "\EventLogs.txt") -Append
   }
-}
-
-Function Win10Ver {
-  param(
-    [string] $Build
-  )
-  if ($build -eq 14393) {
-    return " (RS1 / 1607)"
-  } elseif ($build -eq 15063) {
-    return " (RS2 / 1703)"
-  } elseif ($build -eq 16299) {
-    return " (RS3 / 1709)"
-  } elseif ($build -eq 17134) {
-    return " (RS4 / 1803)"
-  } elseif ($build -eq 17763) {
-    return " (RS5 / 1809)"
-  } elseif ($build -eq 18362) {
-    return " (19H1 / 1903)"
-  } elseif ($build -eq 18363) {
-    return " (19H2 / 1909)"    
-  } elseif ($build -eq 19041) {
-    return " (20H1 / 2004)"  
-  } elseif ($build -eq 19042) {
-    return " (20H2)"  
-  }
-}
-
-Add-Type -MemberDefinition @"
-[DllImport("netapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-public static extern uint NetApiBufferFree(IntPtr Buffer);
-[DllImport("netapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-public static extern int NetGetJoinInformation(
-  string server,
-  out IntPtr NameBuffer,
-  out int BufferType);
-"@ -Namespace Win32Api -Name NetApi32
-
-function GetNBDomainName {
-  $pNameBuffer = [IntPtr]::Zero
-  $joinStatus = 0
-  $apiResult = [Win32Api.NetApi32]::NetGetJoinInformation(
-    $null,               # lpServer
-    [Ref] $pNameBuffer,  # lpNameBuffer
-    [Ref] $joinStatus    # BufferType
-  )
-  if ( $apiResult -eq 0 ) {
-    [Runtime.InteropServices.Marshal]::PtrToStringAuto($pNameBuffer)
-    [Void] [Win32Api.NetApi32]::NetApiBufferFree($pNameBuffer)
-  }
-}
-
-$UserDumpCode=@'
-using System;
-using System.Runtime.InteropServices;
-
-namespace MSDATA
-{
-    public static class UserDump
-    {
-        [DllImport("kernel32.dll")]
-        public static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, uint dwProcessID);
-        [DllImport("dbghelp.dll", EntryPoint = "MiniDumpWriteDump", CallingConvention = CallingConvention.Winapi, CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
-        public static extern bool MiniDumpWriteDump(IntPtr hProcess, uint processId, SafeHandle hFile, uint dumpType, IntPtr expParam, IntPtr userStreamParam, IntPtr callbackParam);
-
-        private enum MINIDUMP_TYPE
-        {
-            MiniDumpNormal = 0x00000000,
-            MiniDumpWithDataSegs = 0x00000001,
-            MiniDumpWithFullMemory = 0x00000002,
-            MiniDumpWithHandleData = 0x00000004,
-            MiniDumpFilterMemory = 0x00000008,
-            MiniDumpScanMemory = 0x00000010,
-            MiniDumpWithUnloadedModules = 0x00000020,
-            MiniDumpWithIndirectlyReferencedMemory = 0x00000040,
-            MiniDumpFilterModulePaths = 0x00000080,
-            MiniDumpWithProcessThreadData = 0x00000100,
-            MiniDumpWithPrivateReadWriteMemory = 0x00000200,
-            MiniDumpWithoutOptionalData = 0x00000400,
-            MiniDumpWithFullMemoryInfo = 0x00000800,
-            MiniDumpWithThreadInfo = 0x00001000,
-            MiniDumpWithCodeSegs = 0x00002000
-        };
-
-        public static bool GenerateUserDump(uint ProcessID, string dumpFileName)
-        {
-            System.IO.FileStream fileStream = System.IO.File.OpenWrite(dumpFileName);
-
-            if (fileStream == null)
-            {
-                return false;
-            }
-
-            // 0x1F0FFF = PROCESS_ALL_ACCESS
-            IntPtr ProcessHandle = OpenProcess(0x1F0FFF, false, ProcessID);
-
-            if(ProcessHandle == null)
-            {
-                return false;
-            }
-
-            MINIDUMP_TYPE Flags =
-                MINIDUMP_TYPE.MiniDumpWithFullMemory |
-                MINIDUMP_TYPE.MiniDumpWithFullMemoryInfo |
-                MINIDUMP_TYPE.MiniDumpWithHandleData |
-                MINIDUMP_TYPE.MiniDumpWithUnloadedModules |
-                MINIDUMP_TYPE.MiniDumpWithThreadInfo;
-
-            bool Result = MiniDumpWriteDump(ProcessHandle,
-                                 ProcessID,
-                                 fileStream.SafeFileHandle,
-                                 (uint)Flags,
-                                 IntPtr.Zero,
-                                 IntPtr.Zero,
-                                 IntPtr.Zero);
-
-            fileStream.Close();
-            return Result;
-        }
-    }
-}
-'@
-add-type -TypeDefinition $UserDumpCode -Language CSharp
-
-Function CreateProcDump {
-  param( $ProcID, $DumpFolder, $filename)
-  if (-not (Test-Path $DumpFolder)) {
-    Write-host ("The folder " + $DumpFolder + " does not exist")
-    return $false
-  }
-  $DumpCreated = $false
-
-  $proc = Get-Process -ID $ProcID
-  if (-not $proc) {
-    Write-Log ("The process with PID $ProcID is not running")
-    return $false
-  }
-  if (-not $Filename) { $filename = $proc.Name }
-  $DumpFile = $DumpFolder + "\" + $filename + "-" + $ProcID + "_" + (get-date).ToString("yyyyMMdd_HHmmss") + ".dmp"
-  
-  if (Test-Path ($root + "\" + $procdump)) {
-    $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma $ProcID """ + $DumpFile + """ >>""" + $outfile + """ 2>>""" + $errfile + """"
-    Write-Log $cmd
-    Invoke-Expression $cmd
-
-    if (Test-Path $DumpFile) {
-      if ((Get-Item $DumpFile).length -gt 1000) {
-        $DumpCreated = $true
-        Write-Log "Successfully created $DumpFile with ProcDump"
-      } else {
-        Write-Log "The created dump file is too small, removing it"
-        Remove-Item $DumpFile
-      }
-    } else {
-      Write-Log "Cannot find the dump file"
-    }
-  }
-
-  if (-not $DumpCreated) {
-    Write-Log "Cannot create the dump with ProcDump, trying the backup method"
-    if ([MSDATA.UserDump]::GenerateUserDump($ProcID, $DumpFile)) {
-      Write-Log ("The dump for the Process ID $ProcID was generated as $DumpFile")
-    } else {
-      Write-Log "Failed to create the dump for the Process ID $ProcID"
-    }
-  }
-}
-
-$FindPIDCode=@'
-using System;
-using System.ServiceProcess;
-using System.Diagnostics;
-using System.Threading;
-using System.Runtime.InteropServices;
-
-namespace MSDATA {
-  public static class FindService {
-
-    public static void Main(){
-	  Console.WriteLine("Hello world!");
-	}
-
-    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
-    public struct SERVICE_STATUS_PROCESS {
-      public int serviceType;
-      public int currentState;
-      public int controlsAccepted;
-      public int win32ExitCode;
-      public int serviceSpecificExitCode;
-      public int checkPoint;
-      public int waitHint;
-      public int processID;
-      public int serviceFlags;
-    }
-
-    [DllImport("advapi32.dll")]
-    public static extern bool QueryServiceStatusEx(IntPtr serviceHandle, int infoLevel, IntPtr buffer, int bufferSize, out int bytesNeeded);
-
-    public static int FindServicePid(string SvcName) {
-      //Console.WriteLine("Hello world!");
-      ServiceController sc = new ServiceController(SvcName);
-      if (sc == null) {
-        return -1;
-      }
-                  
-      IntPtr zero = IntPtr.Zero;
-      int SC_STATUS_PROCESS_INFO = 0;
-      int ERROR_INSUFFICIENT_BUFFER = 0;
-
-      Int32 dwBytesNeeded;
-      System.IntPtr hs = sc.ServiceHandle.DangerousGetHandle();
-
-      // Call once to figure the size of the output buffer.
-      QueryServiceStatusEx(hs, SC_STATUS_PROCESS_INFO, zero, 0, out dwBytesNeeded);
-      if (Marshal.GetLastWin32Error() == ERROR_INSUFFICIENT_BUFFER) {
-        // Allocate required buffer and call again.
-        zero = Marshal.AllocHGlobal((int)dwBytesNeeded);
-
-        if (QueryServiceStatusEx(hs, SC_STATUS_PROCESS_INFO, zero, dwBytesNeeded, out dwBytesNeeded)) {
-          SERVICE_STATUS_PROCESS ssp = (SERVICE_STATUS_PROCESS)Marshal.PtrToStructure(zero, typeof(SERVICE_STATUS_PROCESS));
-          return (int)ssp.processID;
-        }
-      }
-      return -1;
-    }
-  }
-}
-'@
-
-add-type -TypeDefinition $FindPIDCode -Language CSharp -ReferencedAssemblies System.ServiceProcess
-
-Function FindServicePid {
-  param( $SvcName)
-  try {
-    $pidsvc = [MSDATA.FindService]::FindServicePid($SvcName)
-    return $pidsvc
-  }
-  catch {
-    return $null
-  }
-}
-
-Function FindSep {
-  param( [string]$FindIn, [string]$Left,[string]$Right )
-
-  if ($left -eq "") {
-    $Start = 0
-  } else {
-    $Start = $FindIn.IndexOf($Left) 
-    if ($Start -gt 0 ) {
-      $Start = $Start + $Left.Length
-    } else {
-       return ""
-    }
-  }
-
-  if ($Right -eq "") {
-    $End = $FindIn.Substring($Start).Length
-  } else {
-    $End = $FindIn.Substring($Start).IndexOf($Right)
-    if ($end -le 0) {
-      return ""
-    }
-  }
-  $Found = $FindIn.Substring($Start, $End)
-  return $Found
-}
-
-Function Write-Diag {
-  param( [string] $msg )
-  $msg = (get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " " + $msg
-  Write-Host $msg
-  $msg | Out-File -FilePath $diagfile -Append
 }
 
 Function GetStore($store) {
@@ -414,24 +120,6 @@ Function GetOwnerWmi{
   return ($ret.Domain + "\" + $ret.User)
 }
 
-Function FileVersion {
-  param(
-    [string] $FilePath,
-    [bool] $Log = $false
-  )
-  if (Test-Path -Path $FilePath) {
-    $fileobj = Get-item $FilePath
-    $filever = $fileobj.VersionInfo.FileMajorPart.ToString() + "." + $fileobj.VersionInfo.FileMinorPart.ToString() + "." + $fileobj.VersionInfo.FileBuildPart.ToString() + "." + $fileobj.VersionInfo.FilePrivatepart.ToString()
-
-    if ($log) {
-      ($FilePath + "," + $filever + "," + $fileobj.CreationTime.ToString("yyyyMMdd HH:mm:ss")) | Out-File -FilePath ($resDir + "\FilesVersion.csv") -Append
-    }
-    return $filever | Out-Null
-  } else {
-    return ""
-  }
-}
-
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 $myWindowsPrincipal = new-object System.Security.Principal.WindowsPrincipal($myWindowsID)
 $adminRole = [System.Security.Principal.WindowsBuiltInRole]::Administrator
@@ -448,78 +136,76 @@ Write-Host "Find our privacy statement here: https://privacy.microsoft.com/en-us
 $confirm = Read-Host ("Are you sure you want to continue[Y/N]?")
 if ($confirm.ToLower() -ne "y") {exit}
 
-$Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
+$global:Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
 
 $resName = "WinRM-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
-$resDir = $Root + "\" + $resName
-$diagfile = $resDir + "\WinRM-Diag.txt"
-$outfile = $resDir + "\script-output.txt"
-$errfile = $resDir + "\script-errors.txt"
-$RdrOut =  " >>""" + $outfile + """"
-$RdrErr =  " 2>>""" + $errfile + """"
+$global:resDir = $global:Root + "\" + $resName
+$diagfile = $global:resDir + "\WinRM-Diag.txt"
+
+$global:outfile = $global:resDir + "\script-output.txt"
+$global:errfile = $global:resDir + "\script-errors.txt"
+
+Import-Module ($global:Root + "\Collect-Commons.psm1") -Force
+
+$RdrOut =  " >>""" + $global:outfile + """"
+$RdrErr =  " 2>>""" + $global:errfile + """"
 $fqdn = [System.Net.Dns]::GetHostByName(($env:computerName)).HostName
 
 $OSVer = ([environment]::OSVersion.Version.Major) + ([environment]::OSVersion.Version.Minor) /10
 
-if ($env:PROCESSOR_ARCHITECTURE -eq "AMD64") {
-  $procdump = "procdump64.exe"
-} else {
-  $procdump = "procdump.exe"
-}
-
-New-Item -itemtype directory -path $resDir | Out-Null
+New-Item -itemtype directory -path $global:resDir | Out-Null
 
 Write-Log $version
 
-"Logman create counter FwdEvtPerf -o """ + $resdir + "\FwdEvtPerf.blg"" -f bin -v mmddhhmm -c ""\Process(*)\*"" ""\Processor(*)\*"" ""\PhysicalDisk(*)\*"" ""\Event Tracing for Windows Session(EventLog-*)\Events Lost"" ""\Event Tracing for Windows Session(EventLog-*)\Events Logged per sec"" ""\HTTP Service Request Queues(*)\*"" -si 00:00:01" | Out-File -FilePath ($resDir + "\WEF-Perf.bat") -Append -Encoding ascii
-"Logman start FwdEvtPerf" | Out-File -FilePath ($resDir + "\WEF-Perf.bat") -Append -Encoding ascii
-"timeout 60" | Out-File -FilePath ($resDir + "\WEF-Perf.bat") -Append -Encoding ascii
-"Logman stop FwdEvtPerf" | Out-File -FilePath ($resDir + "\WEF-Perf.bat") -Append -Encoding ascii
-"Logman delete FwdEvtPerf" | Out-File -FilePath ($resDir + "\WEF-Perf.bat") -Append -Encoding ascii
+"Logman create counter FwdEvtPerf -o """ + $global:resDir + "\FwdEvtPerf.blg"" -f bin -v mmddhhmm -c ""\Process(*)\*"" ""\Processor(*)\*"" ""\PhysicalDisk(*)\*"" ""\Event Tracing for Windows Session(EventLog-*)\Events Lost"" ""\Event Tracing for Windows Session(EventLog-*)\Events Logged per sec"" ""\HTTP Service Request Queues(*)\*"" -si 00:00:01" | Out-File -FilePath ($global:resDir + "\WEF-Perf.bat") -Append -Encoding ascii
+"Logman start FwdEvtPerf" | Out-File -FilePath ($global:resDir + "\WEF-Perf.bat") -Append -Encoding ascii
+"timeout 60" | Out-File -FilePath ($global:resDir + "\WEF-Perf.bat") -Append -Encoding ascii
+"Logman stop FwdEvtPerf" | Out-File -FilePath ($global:resDir + "\WEF-Perf.bat") -Append -Encoding ascii
+"Logman delete FwdEvtPerf" | Out-File -FilePath ($global:resDir + "\WEF-Perf.bat") -Append -Encoding ascii
 
-$cmd = $resDir + "\WEF-Perf.bat"
+$cmd = $global:resDir + "\WEF-Perf.bat"
 Write-Log $cmd
 Start-Process $cmd -WindowStyle Minimized
 
 Write-Log "Retrieving WinRM configuration"
-$config = Get-ChildItem WSMan:\localhost\ -Recurse -ErrorAction Continue 2>>$errfile
+$config = Get-ChildItem WSMan:\localhost\ -Recurse -ErrorAction Continue 2>>$global:errfile
 if (!$config) {
   Write-Log ("Cannot connect to localhost, trying with FQDN " + $fqdn)
-  Connect-WSMan -ComputerName $fqdn -ErrorAction Continue 2>>$errfile
-  $config = Get-ChildItem WSMan:\$fqdn -Recurse -ErrorAction Continue 2>>$errfile
-  Disconnect-WSMan -ComputerName $fqdn -ErrorAction Continue 2>>$errfile
+  Connect-WSMan -ComputerName $fqdn -ErrorAction Continue 2>>$global:errfile
+  $config = Get-ChildItem WSMan:\$fqdn -Recurse -ErrorAction Continue 2>>$global:errfile
+  Disconnect-WSMan -ComputerName $fqdn -ErrorAction Continue 2>>$global:errfile
 }
 
-$config | out-string -Width 500 | out-file -FilePath ($resDir + "\WinRM-config.txt")
+$config | out-string -Width 500 | out-file -FilePath ($global:resDir + "\WinRM-config.txt")
 
 Write-Log "winrm get winrm/config"
-$cmd = "winrm get winrm/config >>""" + $resDir + "\WinRM-config.txt""" + $RdrErr
+$cmd = "winrm get winrm/config >>""" + $global:resDir + "\WinRM-config.txt""" + $RdrErr
 Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
 Write-Log "winrm e winrm/config/listener"
-$cmd = "winrm e winrm/config/listener >>""" + $resDir + "\WinRM-config.txt""" + $RdrErr
+$cmd = "winrm e winrm/config/listener >>""" + $global:resDir + "\WinRM-config.txt""" + $RdrErr
 Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
 Write-Log "winrm enum winrm/config/service/certmapping"
-$cmd = "winrm enum winrm/config/service/certmapping >>""" + $resDir + "\WinRM-config.txt""" + $RdrErr
+$cmd = "winrm enum winrm/config/service/certmapping >>""" + $global:resDir + "\WinRM-config.txt""" + $RdrErr
 Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
 Write-Log "Collecting dump of the svchost process hosting the WinRM service"
 $pidWinRM = FindServicePid "WinRM"
 if ($pidWinRM) {
-  CreateProcDump $pidWinRM $resDir "scvhost-WinRM"
+  CreateProcDump $pidWinRM $global:resDir "scvhost-WinRM"
 }
 
 Write-Log "Collecing the dumps of wsmprovhost.exe processes"
-$list = get-process -Name "wsmprovhost" -ErrorAction SilentlyContinue 2>>$errfile
+$list = get-process -Name "wsmprovhost" -ErrorAction SilentlyContinue 2>>$global:errfile
 if (($list | measure).count -gt 0) {
   foreach ($proc in $list)
   {
     Write-Log ("Found wsmprovhost.exe with PID " + $proc.Id)
-    CreateProcDump $proc.id $resDir
+    CreateProcDump $proc.id $global:resDir
   }
 } else {
   Write-Log "No wsmprovhost.exe processes found"
@@ -532,7 +218,7 @@ if ($pidWinRM) {
     Write-Log ("The PID of the WecSvc service is: " + $pidWEC)
     if ($pidWinRM -ne $pidWEC) {
       Write-Log "WinRM and WecSvc are not in the same process"
-      CreateProcDump $pidWEC $resDir "scvhost-WEC"
+      CreateProcDump $pidWEC $global:resDir "scvhost-WEC"
     }
   }
 }
@@ -541,166 +227,166 @@ Write-Log "Collecting dump of the SME.exe process"
 $proc = get-process "SME" -ErrorAction SilentlyContinue
 if ($proc) {
   Write-Log "Process SME.EXE found with PID $proc.id"
-  CreateProcDump $proc.id $resDir
+  CreateProcDump $proc.id $global:resDir
 }
 
 FileVersion -Filepath ($env:windir + "\system32\wsmsvc.dll") -Log $true
 
 if (Get-ChildItem -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector\Subscriptions) {
   Write-Log "Retrieving subscriptions configuration"
-  $cmd = "wecutil es 2>>""" + $errfile + """"
+  $cmd = "wecutil es 2>>""" + $global:errfile + """"
   Write-log $cmd
   $subList = Invoke-Expression $cmd
 
   if ($subList -gt "") {
     foreach($sub in $subList) {
       Write-Log "Subscription: " + $sub
-      ("Subscription: " + $sub) | out-file -FilePath ($resDir + "\Subscriptions.txt") -Append
-      "-----------------------" | out-file -FilePath ($resDir + "\Subscriptions.txt") -Append
+      ("Subscription: " + $sub) | out-file -FilePath ($global:resDir + "\Subscriptions.txt") -Append
+      "-----------------------" | out-file -FilePath ($global:resDir + "\Subscriptions.txt") -Append
       $cmd = "wecutil gs """ + $sub + """ /f:xml" + $RdrErr
       Write-Log $cmd
-      Invoke-Expression ($cmd) | out-file -FilePath ($resDir + "\Subscriptions.txt") -Append
+      Invoke-Expression ($cmd) | out-file -FilePath ($global:resDir + "\Subscriptions.txt") -Append
 
       $cmd = "wecutil gr """ + $sub + """" + $RdrErr
       Write-Log $cmd
-      Invoke-Expression ($cmd) | out-file -FilePath ($resDir + "\Subscriptions.txt") -Append
+      Invoke-Expression ($cmd) | out-file -FilePath ($global:resDir + "\Subscriptions.txt") -Append
 
-      " " | out-file -FilePath ($resDir + "\Subscriptions.txt") -Append
+      " " | out-file -FilePath ($global:resDir + "\Subscriptions.txt") -Append
     }
   }
 }
 
 Write-Log "Listing members of Event Log Readers group"
-$cmd = "net localgroup ""Event Log Readers"" >>""" + $resDir + "\Groups.txt""" + $RdrErr
+$cmd = "net localgroup ""Event Log Readers"" >>""" + $global:resDir + "\Groups.txt""" + $RdrErr
 Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
 Write-Log "Listing members of WinRMRemoteWMIUsers__ group"
-$cmd = "net localgroup ""WinRMRemoteWMIUsers__"" >>""" + $resDir + "\Groups.txt""" + $RdrErr
+$cmd = "net localgroup ""WinRMRemoteWMIUsers__"" >>""" + $global:resDir + "\Groups.txt""" + $RdrErr
 Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
 Write-Log "Finding SID of WinRMRemoteWMIUsers__ group"
-$objUser = New-Object System.Security.Principal.NTAccount("WinRMRemoteWMIUsers__") -ErrorAction SilentlyContinue 2>>$errfile
+$objUser = New-Object System.Security.Principal.NTAccount("WinRMRemoteWMIUsers__") -ErrorAction SilentlyContinue 2>>$global:errfile
 $strSID = $objUser.Translate([System.Security.Principal.SecurityIdentifier]).value
 
 $objSID = New-Object System.Security.Principal.SecurityIdentifier($strSID)
 $group = $objSID.Translate( [System.Security.Principal.NTAccount]).Value
 
-(" ") | Out-File -FilePath ($resDir + "\Groups.txt") -Append
-($group + " = " + $strSID) | Out-File -FilePath ($resDir + "\Groups.txt") -Append
+(" ") | Out-File -FilePath ($global:resDir + "\Groups.txt") -Append
+($group + " = " + $strSID) | Out-File -FilePath ($global:resDir + "\Groups.txt") -Append
 
 Write-Log "Get-Culture output"
-"Get-Culture" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
-Get-Culture | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+"Get-Culture" | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
+Get-Culture | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
 
 Write-Log "Exporting registry key HKEY_USERS\S-1-5-20\Control Panel\International"
-$cmd = "reg export ""HKEY_USERS\S-1-5-20\Control Panel\International"" """ + $resDir + "\InternationalNetworkService.reg.txt"" /y " + $RdrOut + $RdrErr
+$cmd = "reg export ""HKEY_USERS\S-1-5-20\Control Panel\International"" """ + $global:resDir + "\InternationalNetworkService.reg.txt"" /y " + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
 Write-Log "Get-WinSystemLocale output"
-"Get-WinSystemLocale" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
-Get-WinSystemLocale | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+"Get-WinSystemLocale" | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
+Get-WinSystemLocale | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
 
 Write-Log "Get-WinHomeLocation output"
-"Get-WinHomeLocation" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
-Get-WinHomeLocation | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+"Get-WinHomeLocation" | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
+Get-WinHomeLocation | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
 
 Write-Log "Get-WinUILanguageOverride output"
-"Get-WinUILanguageOverride" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
-Get-WinUILanguageOverride | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+"Get-WinUILanguageOverride" | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
+Get-WinUILanguageOverride | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
 
 Write-Log "Get-WinUserLanguageList output"
-"Get-WinUserLanguageList" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
-Get-WinUserLanguageList | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+"Get-WinUserLanguageList" | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
+Get-WinUserLanguageList | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
 
 Write-Log "Get-WinAcceptLanguageFromLanguageListOptOut output"
-"Get-WinAcceptLanguageFromLanguageListOptOut" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
-Get-WinAcceptLanguageFromLanguageListOptOut | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+"Get-WinAcceptLanguageFromLanguageListOptOut" | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
+Get-WinAcceptLanguageFromLanguageListOptOut | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
 
 Write-Log "Get-WinCultureFromLanguageListOptOut output"
-"Get-Get-WinCultureFromLanguageListOptOut" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
-Get-WinCultureFromLanguageListOptOut | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+"Get-Get-WinCultureFromLanguageListOptOut" | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
+Get-WinCultureFromLanguageListOptOut | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
 
 Write-Log "Get-WinDefaultInputMethodOverride output"
-"Get-WinDefaultInputMethodOverride" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
-Get-WinDefaultInputMethodOverride | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+"Get-WinDefaultInputMethodOverride" | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
+Get-WinDefaultInputMethodOverride | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
 
 Write-Log "Get-WinLanguageBarOption output"
-"Get-WinLanguageBarOption" | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
-Get-WinLanguageBarOption | Out-File -FilePath ($resDir + "\LanguageInfo.txt") -Append
+"Get-WinLanguageBarOption" | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
+Get-WinLanguageBarOption | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
 
 Write-Log "Get-NetConnectionProfile output"
-Get-NetConnectionProfile | Out-File -FilePath ($resDir + "\NetConnectionProfile.txt") -Append
+Get-NetConnectionProfile | Out-File -FilePath ($global:resDir + "\NetConnectionProfile.txt") -Append
 
 Write-Log "Get-WSManCredSSP output"
-Get-WSManCredSSP | Out-File -FilePath ($resDir + "\WSManCredSSP.txt") -Append
+Get-WSManCredSSP | Out-File -FilePath ($global:resDir + "\WSManCredSSP.txt") -Append
 
 Write-Log "Exporting firewall rules"
-$cmd = "netsh advfirewall firewall show rule name=all >""" + $resDir + "\FirewallRules.txt""" + $RdrErr
+$cmd = "netsh advfirewall firewall show rule name=all >""" + $global:resDir + "\FirewallRules.txt""" + $RdrErr
 Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
 Write-Log "Exporting netstat output"
-$cmd = "netstat -anob >""" + $resDir + "\netstat.txt""" + $RdrErr
+$cmd = "netstat -anob >""" + $global:resDir + "\netstat.txt""" + $RdrErr
 Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
 Write-Log "Exporting ipconfig /all output"
-$cmd = "ipconfig /all >""" + $resDir + "\ipconfig.txt""" + $RdrErr
+$cmd = "ipconfig /all >""" + $global:resDir + "\ipconfig.txt""" + $RdrErr
 Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
 Write-Log "Copying hosts and lmhosts"
 if (Test-path -path C:\Windows\system32\drivers\etc\hosts) {
-  Copy-Item C:\Windows\system32\drivers\etc\hosts $resDir\hosts.txt -ErrorAction Continue 2>>$errfile
+  Copy-Item C:\Windows\system32\drivers\etc\hosts $global:resDir\hosts.txt -ErrorAction Continue 2>>$global:errfile
 }
 if (Test-Path -Path C:\Windows\system32\drivers\etc\lmhosts) {
-  Copy-Item C:\Windows\system32\drivers\etc\lmhosts $resDir\lmhosts.txt -ErrorAction Continue 2>>$errfile
+  Copy-Item C:\Windows\system32\drivers\etc\lmhosts $global:resDir\lmhosts.txt -ErrorAction Continue 2>>$global:errfile
 }
 
 $dir = $env:windir + "\system32\logfiles\HTTPERR"
 if (Test-Path -path $dir) {
   $last = Get-ChildItem -path ($dir) | Sort CreationTime -Descending | Select Name -First 1 
-  Copy-Item ($dir + "\" + $last.name) $resDir\httperr.log -ErrorAction Continue 2>>$errfile
+  Copy-Item ($dir + "\" + $last.name) $global:resDir\httperr.log -ErrorAction Continue 2>>$global:errfile
 }
 
 Write-Log "WinHTTP proxy configuration"
-$cmd = "netsh winhttp show proxy >""" + $resDir + "\WinHTTP-Proxy.txt""" + $RdrErr
+$cmd = "netsh winhttp show proxy >""" + $global:resDir + "\WinHTTP-Proxy.txt""" + $RdrErr
 Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
 Write-Log "NSLookup WPAD"
-"------------------" | Out-File -FilePath ($resDir + "\WinHTTP-Proxy.txt") -Append
-"NSLookup WPAD" | Out-File -FilePath ($resDir + "\WinHTTP-Proxy.txt") -Append
-"" | Out-File -FilePath ($resDir + "\WinHTTP-Proxy.txt") -Append
-$cmd = "nslookup wpad >>""" + $resDir + "\WinHTTP-Proxy.txt""" + $RdrErr
+"------------------" | Out-File -FilePath ($global:resDir + "\WinHTTP-Proxy.txt") -Append
+"NSLookup WPAD" | Out-File -FilePath ($global:resDir + "\WinHTTP-Proxy.txt") -Append
+"" | Out-File -FilePath ($global:resDir + "\WinHTTP-Proxy.txt") -Append
+$cmd = "nslookup wpad >>""" + $global:resDir + "\WinHTTP-Proxy.txt""" + $RdrErr
 Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
 Write-Log "Collecing GPResult output"
-$cmd = "gpresult /h """ + $resDir + "\gpresult.html""" + $RdrErr
+$cmd = "gpresult /h """ + $global:resDir + "\gpresult.html""" + $RdrErr
 write-log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
-$cmd = "gpresult /r >""" + $resDir + "\gpresult.txt""" + $RdrErr
+$cmd = "gpresult /r >""" + $global:resDir + "\gpresult.txt""" + $RdrErr
 Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\WinRM"
-$cmd = "reg export HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\WinRM """ + $resDir + "\WinRM.reg.txt"" /y " + $RdrOut + $RdrErr
+$cmd = "reg export HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\WinRM """ + $global:resDir + "\WinRM.reg.txt"" /y " + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\WSMAN"
-$cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\WSMAN """+ $resDir + "\WSMAN.reg.txt"" /y" + $RdrOut + $RdrErr
+$cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\WSMAN """+ $global:resDir + "\WSMAN.reg.txt"" /y" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
 if (Test-Path HKLM:\Software\Policies\Microsoft\Windows\WinRM) {
   Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\WinRM"
-  $cmd = "reg export HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\WinRM """+ $resDir + "\WinRM-Policies.reg.txt"" /y" + $RdrOut + $RdrErr
+  $cmd = "reg export HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\WinRM """+ $global:resDir + "\WinRM-Policies.reg.txt"" /y" + $RdrOut + $RdrErr
   Write-Log $cmd
   Invoke-Expression $cmd
 } else {
@@ -708,53 +394,53 @@ if (Test-Path HKLM:\Software\Policies\Microsoft\Windows\WinRM) {
 }
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
-$cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System """+ $resDir + "\System-Policies.reg.txt"" /y" + $RdrOut + $RdrErr
+$cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System """+ $global:resDir + "\System-Policies.reg.txt"" /y" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector"
-$cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector """+ $resDir + "\EventCollector.reg.txt"" /y" + $RdrOut + $RdrErr
+$cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector """+ $global:resDir + "\EventCollector.reg.txt"" /y" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\EventForwarding"
-$cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\EventForwarding """+ $resDir + "\EventForwarding.reg.txt"" /y" + $RdrOut + $RdrErr
+$cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\EventForwarding """+ $global:resDir + "\EventForwarding.reg.txt"" /y" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\EventLog"
-$cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\EventLog """+ $resDir + "\EventLog-Policies.reg.txt"" /y" + $RdrOut + $RdrErr
+$cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\EventLog """+ $global:resDir + "\EventLog-Policies.reg.txt"" /y" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL"
-$cmd = "reg export HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL """+ $resDir + "\SCHANNEL.reg.txt"" /y" + $RdrOut + $RdrErr
+$cmd = "reg export HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL """+ $global:resDir + "\SCHANNEL.reg.txt"" /y" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Cryptography"
-$cmd = "reg export HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Cryptography """+ $resDir + "\Cryptography.reg.txt"" /y" + $RdrOut + $RdrErr
+$cmd = "reg export HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Cryptography """+ $global:resDir + "\Cryptography.reg.txt"" /y" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Cryptography"
-$cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Cryptography """+ $resDir + "\Cryptography-Policy.reg.txt"" /y" + $RdrOut + $RdrErr
+$cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Cryptography """+ $global:resDir + "\Cryptography-Policy.reg.txt"" /y" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Lsa"
-$cmd = "reg export HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Lsa """+ $resDir + "\LSA.reg.txt"" /y" + $RdrOut + $RdrErr
+$cmd = "reg export HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Lsa """+ $global:resDir + "\LSA.reg.txt"" /y" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\HTTP"
-$cmd = "reg export HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\HTTP """+ $resDir + "\HTTP.reg.txt"" /y" + $RdrOut + $RdrErr
+$cmd = "reg export HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\HTTP """+ $global:resDir + "\HTTP.reg.txt"" /y" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
 if (Test-Path HKLM:\SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowFreshCredentials) {
   Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowFreshCredentials"
-  $cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowFreshCredentials """+ $resDir + "\AllowFreshCredentials.reg.txt"" /y" + $RdrOut + $RdrErr
+  $cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowFreshCredentials """+ $global:resDir + "\AllowFreshCredentials.reg.txt"" /y" + $RdrOut + $RdrErr
   Write-Log $cmd
   Invoke-Expression $cmd
 } else {
@@ -762,68 +448,68 @@ if (Test-Path HKLM:\SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\Al
 }
 
 Write-Log "Exporting System log"
-$cmd = "wevtutil epl System """+ $resDir + "\" + $env:computername + "-System.evtx""" + $RdrOut + $RdrErr
+$cmd = "wevtutil epl System """+ $global:resDir + "\" + $env:computername + "-System.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "System"
 
 Write-Log "Exporting Application log"
-$cmd = "wevtutil epl Application """+ $resDir + "\" + $env:computername + "-Application.evtx""" + $RdrOut + $RdrErr
+$cmd = "wevtutil epl Application """+ $global:resDir + "\" + $env:computername + "-Application.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "Application"
 
 Write-Log "Exporting CAPI2 log"
-$cmd = "wevtutil epl Microsoft-Windows-CAPI2/Operational """+ $resDir + "\" + $env:computername + "-capi2.evtx""" + $RdrOut + $RdrErr
+$cmd = "wevtutil epl Microsoft-Windows-CAPI2/Operational """+ $global:resDir + "\" + $env:computername + "-capi2.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "capi2"
 
 Write-Log "Exporting Windows Remote Management log"
-$cmd = "wevtutil epl Microsoft-Windows-WinRM/Operational """+ $resDir + "\" + $env:computername + "-WindowsRemoteManagement.evtx""" + $RdrOut + $RdrErr
+$cmd = "wevtutil epl Microsoft-Windows-WinRM/Operational """+ $global:resDir + "\" + $env:computername + "-WindowsRemoteManagement.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "WindowsRemoteManagement"
 
 Write-Log "Exporting EventCollector log"
-$cmd = "wevtutil epl Microsoft-Windows-EventCollector/Operational """+ $resDir + "\" + $env:computername + "-EventCollector.evtx""" + $RdrOut + $RdrErr
+$cmd = "wevtutil epl Microsoft-Windows-EventCollector/Operational """+ $global:resDir + "\" + $env:computername + "-EventCollector.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "EventCollector"
 
 Write-Log "Exporting Event-ForwardingPlugin log"
-$cmd = "wevtutil epl Microsoft-Windows-Forwarding/Operational """+ $resDir + "\" + $env:computername + "-Event-ForwardingPlugin.evtx""" + $RdrOut + $RdrErr
+$cmd = "wevtutil epl Microsoft-Windows-Forwarding/Operational """+ $global:resDir + "\" + $env:computername + "-Event-ForwardingPlugin.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "Event-ForwardingPlugin"
 
 Write-Log "Exporting PowerShell/Operational log"
-$cmd = "wevtutil epl Microsoft-Windows-PowerShell/Operational """+ $resDir + "\" + $env:computername + "-PowerShell-Operational.evtx""" + $RdrOut + $RdrErr
+$cmd = "wevtutil epl Microsoft-Windows-PowerShell/Operational """+ $global:resDir + "\" + $env:computername + "-PowerShell-Operational.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "PowerShell-Operational"
 
 Write-Log "Exporting Windows PowerShell log"
-$cmd = "wevtutil epl ""Windows PowerShell"" """+ $resDir + "\" + $env:computername + "-WindowsPowerShell.evtx""" + $RdrOut + $RdrErr
+$cmd = "wevtutil epl ""Windows PowerShell"" """+ $global:resDir + "\" + $env:computername + "-WindowsPowerShell.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "WindowsPowerShell"
 
 Write-Log "Exporting Windows Group Policy log"
-$cmd = "wevtutil epl ""Microsoft-Windows-GroupPolicy/Operational"" """+ $resDir + "\" + $env:computername + "-GroupPolicy.evtx""" + $RdrOut + $RdrErr
+$cmd = "wevtutil epl ""Microsoft-Windows-GroupPolicy/Operational"" """+ $global:resDir + "\" + $env:computername + "-GroupPolicy.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "GroupPolicy"
 
 Write-Log "Exporting Kernel-EventTracing log"
-$cmd = "wevtutil epl ""Microsoft-Windows-Kernel-EventTracing/Admin"" """+ $resDir + "\" + $env:computername + "-EventTracing.evtx""" + $RdrOut + $RdrErr
+$cmd = "wevtutil epl ""Microsoft-Windows-Kernel-EventTracing/Admin"" """+ $global:resDir + "\" + $env:computername + "-EventTracing.evtx""" + $RdrOut + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "EventTracing"
 
 if (Get-WinEvent -ListLog Microsoft-ServerManagementExperience -ErrorAction SilentlyContinue) {
   Write-Log "Exporting Windows Admin Center log"
-  $cmd = "wevtutil epl Microsoft-ServerManagementExperience """+ $resDir + "\" + $env:computername + "-WindowsAdminCenter.evtx""" + $RdrOut + $RdrErr
+  $cmd = "wevtutil epl Microsoft-ServerManagementExperience """+ $global:resDir + "\" + $env:computername + "-WindowsAdminCenter.evtx""" + $RdrOut + $RdrErr
   Write-Log $cmd
   Invoke-Expression $cmd
   ArchiveLog "WindowsAdminCenter"
@@ -835,159 +521,159 @@ EvtLogDetails "Security"
 EvtLogDetails "ForwardedEvents"
 
 Write-Log "Autologgers configuration"
-Get-AutologgerConfig -Name EventLog-ForwardedEvents | Out-File -FilePath ($resDir + "\AutoLoggersConfiguration.txt") -Append
-Get-AutologgerConfig -Name EventLog-System | Out-File -FilePath ($resDir + "\AutoLoggersConfiguration.txt") -Append
-Get-AutologgerConfig -Name EventLog-Security| Out-File -FilePath ($resDir + "\AutoLoggersConfiguration.txt") -Append
-Get-AutologgerConfig -Name EventLog-Application| Out-File -FilePath ($resDir + "\AutoLoggersConfiguration.txt") -Append
+Get-AutologgerConfig -Name EventLog-ForwardedEvents | Out-File -FilePath ($global:resDir + "\AutoLoggersConfiguration.txt") -Append
+Get-AutologgerConfig -Name EventLog-System | Out-File -FilePath ($global:resDir + "\AutoLoggersConfiguration.txt") -Append
+Get-AutologgerConfig -Name EventLog-Security| Out-File -FilePath ($global:resDir + "\AutoLoggersConfiguration.txt") -Append
+Get-AutologgerConfig -Name EventLog-Application| Out-File -FilePath ($global:resDir + "\AutoLoggersConfiguration.txt") -Append
 
 if ($OSVer -gt 6.1 ) {
   Write-Log "Copying ServerManager configuration"
-  copy-item $env:APPDATA\Microsoft\Windows\ServerManager\ServerList.xml $resDir\ServerList.xml -ErrorAction Continue 2>>$errfile
+  copy-item $env:APPDATA\Microsoft\Windows\ServerManager\ServerList.xml $global:resDir\ServerList.xml -ErrorAction Continue 2>>$global:errfile
 
   Write-Log "Exporting Microsoft-Windows-ServerManager-ConfigureSMRemoting/Operational log"
-  $cmd = "wevtutil epl Microsoft-Windows-ServerManager-ConfigureSMRemoting/Operational """+ $resDir + "\" + $env:computername + "-ServerManager-ConfigureSMRemoting.evtx""" + $RdrOut + $RdrErr
+  $cmd = "wevtutil epl Microsoft-Windows-ServerManager-ConfigureSMRemoting/Operational """+ $global:resDir + "\" + $env:computername + "-ServerManager-ConfigureSMRemoting.evtx""" + $RdrOut + $RdrErr
   Write-Log $cmd
   Invoke-Expression $cmd
 
   Write-Log "Exporting Microsoft-Windows-ServerManager-DeploymentProvider/Operational log"
-  $cmd = "wevtutil epl Microsoft-Windows-ServerManager-DeploymentProvider/Operational """+ $resDir + "\" + $env:computername + "-ServerManager-DeploymentProvider.evtx""" + $RdrOut + $RdrErr
+  $cmd = "wevtutil epl Microsoft-Windows-ServerManager-DeploymentProvider/Operational """+ $global:resDir + "\" + $env:computername + "-ServerManager-DeploymentProvider.evtx""" + $RdrOut + $RdrErr
   Write-Log $cmd
   Invoke-Expression $cmd
 
   Write-Log "Exporting Microsoft-Windows-ServerManager-MgmtProvider/Operational log"
-  $cmd = "wevtutil epl Microsoft-Windows-ServerManager-MgmtProvider/Operational """+ $resDir + "\" + $env:computername + "-ServerManager-MgmtProvider.evtx""" + $RdrOut + $RdrErr
+  $cmd = "wevtutil epl Microsoft-Windows-ServerManager-MgmtProvider/Operational """+ $global:resDir + "\" + $env:computername + "-ServerManager-MgmtProvider.evtx""" + $RdrOut + $RdrErr
   Write-Log $cmd
   Invoke-Expression $cmd
 
   Write-Log "Exporting Microsoft-Windows-ServerManager-MultiMachine/Operational log"
-  $cmd = "wevtutil epl Microsoft-Windows-ServerManager-MultiMachine/Operational """+ $resDir + "\" + $env:computername + "-ServerManager-MultiMachine.evtx""" + $RdrOut + $RdrErr
+  $cmd = "wevtutil epl Microsoft-Windows-ServerManager-MultiMachine/Operational """+ $global:resDir + "\" + $env:computername + "-ServerManager-MultiMachine.evtx""" + $RdrOut + $RdrErr
   Write-Log $cmd
   Invoke-Expression $cmd
 
   Write-Log "Exporting Microsoft-Windows-FileServices-ServerManager-EventProvider/Operational log"
-  $cmd = "wevtutil epl Microsoft-Windows-FileServices-ServerManager-EventProvider/Operational """+ $resDir + "\" + $env:computername + "-ServerManager-EventProvider.evtx""" + $RdrOut + $RdrErr
+  $cmd = "wevtutil epl Microsoft-Windows-FileServices-ServerManager-EventProvider/Operational """+ $global:resDir + "\" + $env:computername + "-ServerManager-EventProvider.evtx""" + $RdrOut + $RdrErr
   Write-Log $cmd
   Invoke-Expression $cmd
   
   Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\ServerManager\ServicingStorage\ServerComponentCache"
-  $cmd = "reg export ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\ServerManager\ServicingStorage\ServerComponentCache"" """ + $resDir + "\ServerComponentCache.reg.txt"" /y " + $RdrOut + $RdrErr
+  $cmd = "reg export ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\ServerManager\ServicingStorage\ServerComponentCache"" """ + $global:resDir + "\ServerComponentCache.reg.txt"" /y " + $RdrOut + $RdrErr
   Write-Log $cmd
   Invoke-Expression $cmd
 }
 
 Write-Log "Exporting netsh http settings"
-$cmd = "netsh http show sslcert >>""" + $resDir + "\netsh-http.txt""" + $RdrErr
+$cmd = "netsh http show sslcert >>""" + $global:resDir + "\netsh-http.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
-$cmd = "netsh http show urlacl >>""" + $resDir + "\netsh-http.txt""" + $RdrErr
+$cmd = "netsh http show urlacl >>""" + $global:resDir + "\netsh-http.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
-$cmd = "netsh http show servicestate >>""" + $resDir + "\netsh-http.txt""" + $RdrErr
+$cmd = "netsh http show servicestate >>""" + $global:resDir + "\netsh-http.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
-$cmd = "netsh http show iplisten >>""" + $resDir + "\netsh-http.txt""" + $RdrErr
+$cmd = "netsh http show iplisten >>""" + $global:resDir + "\netsh-http.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
 if (Test-Path HKLM:\SOFTWARE\Microsoft\InetStp) {
   Write-Log "Exporting IIS configuration"
-  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list app >>""" + $resDir + "\iisconfig.txt""" + $RdrErr
+  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list app >>""" + $global:resDir + "\iisconfig.txt""" + $RdrErr
   Write-Log $cmd
   Invoke-Expression $cmd
 
-  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list apppool >>""" + $resDir + "\iisconfig.txt""" + $RdrErr
+  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list apppool >>""" + $global:resDir + "\iisconfig.txt""" + $RdrErr
   Write-Log $cmd
   Invoke-Expression $cmd
 
-  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list site >>""" + $resDir + "\iisconfig.txt""" + $RdrErr
+  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list site >>""" + $global:resDir + "\iisconfig.txt""" + $RdrErr
   Write-Log $cmd
   Invoke-Expression $cmd
 
-  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list module >>""" + $resDir + "\iisconfig.txt""" + $RdrErr
+  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list module >>""" + $global:resDir + "\iisconfig.txt""" + $RdrErr
   Write-Log $cmd
   Invoke-Expression $cmd
 
-  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list wp >>""" + $resDir + "\iisconfig.txt""" + $RdrErr
+  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list wp >>""" + $global:resDir + "\iisconfig.txt""" + $RdrErr
   Write-Log $cmd
   Invoke-Expression $cmd
 
-  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list vdir >>""" + $resDir + "\iisconfig.txt""" + $RdrErr
+  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list vdir >>""" + $global:resDir + "\iisconfig.txt""" + $RdrErr
   Write-Log $cmd
   Invoke-Expression $cmd
 
-  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list config >>""" + $resDir + "\iisconfig.txt""" + $RdrErr
+  $cmd = $env:SystemRoot + "\system32\inetsrv\APPCMD list config >>""" + $global:resDir + "\iisconfig.txt""" + $RdrErr
   Write-Log $cmd
   Invoke-Expression $cmd
 } else { 
   Write-Log "IIS is not installed"
 }
 
-$cmd = "setspn -L " + $env:computername + " >>""" + $resDir + "\SPN.txt""" + $RdrErr
+$cmd = "setspn -L " + $env:computername + " >>""" + $global:resDir + "\SPN.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
-" " | Out-File ($resDir + "\SPN.txt") -Append
+" " | Out-File ($global:resDir + "\SPN.txt") -Append
 
-"Searching HTTP/" + $env:computername + " in the domain" | Out-File ($resDir + "\SPN.txt") -Append
-$cmd = "setspn -Q HTTP/" + $env:computername + " >>""" + $resDir + "\SPN.txt""" + $RdrErr
+"Searching HTTP/" + $env:computername + " in the domain" | Out-File ($global:resDir + "\SPN.txt") -Append
+$cmd = "setspn -Q HTTP/" + $env:computername + " >>""" + $global:resDir + "\SPN.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
-" " | Out-File ($resDir + "\SPN.txt") -Append
+" " | Out-File ($global:resDir + "\SPN.txt") -Append
 
-"Searching HTTP/" + $fqdn + " in the domain" | Out-File ($resDir + "\SPN.txt") -Append
-$cmd = "setspn -Q HTTP/" + $fqdn + " >>""" + $resDir + "\SPN.txt""" + $RdrErr
+"Searching HTTP/" + $fqdn + " in the domain" | Out-File ($global:resDir + "\SPN.txt") -Append
+$cmd = "setspn -Q HTTP/" + $fqdn + " >>""" + $global:resDir + "\SPN.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
-" " | Out-File ($resDir + "\SPN.txt") -Append
+" " | Out-File ($global:resDir + "\SPN.txt") -Append
 
-"Searching HTTP/" + $env:computername + " in the forest" | Out-File ($resDir + "\SPN.txt") -Append
-$cmd = "setspn -F -Q HTTP/" + $env:computername + " >>""" + $resDir + "\SPN.txt""" + $RdrErr
+"Searching HTTP/" + $env:computername + " in the forest" | Out-File ($global:resDir + "\SPN.txt") -Append
+$cmd = "setspn -F -Q HTTP/" + $env:computername + " >>""" + $global:resDir + "\SPN.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
-" " | Out-File ($resDir + "\SPN.txt") -Append
+" " | Out-File ($global:resDir + "\SPN.txt") -Append
 
-"Searching HTTP/" + $fqdn + " in the forest" | Out-File ($resDir + "\SPN.txt") -Append
-$cmd = "setspn -F -Q HTTP/" + $fqdn + " >>""" + $resDir + "\SPN.txt""" + $RdrErr
+"Searching HTTP/" + $fqdn + " in the forest" | Out-File ($global:resDir + "\SPN.txt") -Append
+$cmd = "setspn -F -Q HTTP/" + $fqdn + " >>""" + $global:resDir + "\SPN.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
-" " | Out-File ($resDir + "\SPN.txt") -Append
+" " | Out-File ($global:resDir + "\SPN.txt") -Append
 
-"Searching WSMAN/" + $env:computername + " in the domain" | Out-File ($resDir + "\SPN.txt") -Append
-$cmd = "setspn -Q WSMAN/" + $env:computername + " >>""" + $resDir + "\SPN.txt""" + $RdrErr
+"Searching WSMAN/" + $env:computername + " in the domain" | Out-File ($global:resDir + "\SPN.txt") -Append
+$cmd = "setspn -Q WSMAN/" + $env:computername + " >>""" + $global:resDir + "\SPN.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
-" " | Out-File ($resDir + "\SPN.txt") -Append
+" " | Out-File ($global:resDir + "\SPN.txt") -Append
 
-"Searching WSMAN/" + $fqdn + " in the domain" | Out-File ($resDir + "\SPN.txt") -Append
-$cmd = "setspn -Q WSMAN/" + $fqdn + " >>""" + $resDir + "\SPN.txt""" + $RdrErr
+"Searching WSMAN/" + $fqdn + " in the domain" | Out-File ($global:resDir + "\SPN.txt") -Append
+$cmd = "setspn -Q WSMAN/" + $fqdn + " >>""" + $global:resDir + "\SPN.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
-" " | Out-File ($resDir + "\SPN.txt") -Append
+" " | Out-File ($global:resDir + "\SPN.txt") -Append
 
-"Searching WSMAN/" + $env:computername + " in the forest" | Out-File ($resDir + "\SPN.txt") -Append
-$cmd = "setspn -F -Q WSMAN/" + $env:computername + " >>""" + $resDir + "\SPN.txt""" + $RdrErr
+"Searching WSMAN/" + $env:computername + " in the forest" | Out-File ($global:resDir + "\SPN.txt") -Append
+$cmd = "setspn -F -Q WSMAN/" + $env:computername + " >>""" + $global:resDir + "\SPN.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
-" " | Out-File ($resDir + "\SPN.txt") -Append
+" " | Out-File ($global:resDir + "\SPN.txt") -Append
 
-"Searching WSMAN/" + $fqdn + " in the forest" | Out-File ($resDir + "\SPN.txt") -Append
-$cmd = "setspn -F -Q WSMAN/" + $fqdn + " >>""" + $resDir + "\SPN.txt""" + $RdrErr
+"Searching WSMAN/" + $fqdn + " in the forest" | Out-File ($global:resDir + "\SPN.txt") -Append
+$cmd = "setspn -F -Q WSMAN/" + $fqdn + " >>""" + $global:resDir + "\SPN.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
-" " | Out-File ($resDir + "\SPN.txt") -Append
+" " | Out-File ($global:resDir + "\SPN.txt") -Append
 
 Write-Log "Collecting certificates details"
-$cmd = "Certutil -verifystore -v MY > """ + $resDir + "\Certificates-My.txt""" + $RdrErr
+$cmd = "Certutil -verifystore -v MY > """ + $global:resDir + "\Certificates-My.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
-$cmd = "Certutil -verifystore -v ROOT > """ + $resDir + "\Certificates-Root.txt""" + $RdrErr
+$cmd = "Certutil -verifystore -v ROOT > """ + $global:resDir + "\Certificates-Root.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
-$cmd = "Certutil -verifystore -v CA > """ + $resDir + "\Certificates-Intermediate.txt""" + $RdrErr
+$cmd = "Certutil -verifystore -v CA > """ + $global:resDir + "\Certificates-Intermediate.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
 
@@ -1015,13 +701,13 @@ foreach ($cert in $aCert) {
     $cert.IssuerThumbprint = ($aIssuer[0].Thumbprint).ToString()
   }
 }
-$tbcert | Export-Csv ($resDir + "\certificates.tsv") -noType -Delimiter "`t"
+$tbcert | Export-Csv ($global:resDir + "\certificates.tsv") -noType -Delimiter "`t"
 
 Write-Log "PowerShell version"
-$PSVersionTable | Out-File -FilePath ($resDir + "\PSVersion.txt") -Append
+$PSVersionTable | Out-File -FilePath ($global:resDir + "\PSVersion.txt") -Append
 
 Write-Log "Collecting the list of installed hotfixes"
-Get-HotFix -ErrorAction SilentlyContinue 2>>$errfile | Sort-Object -Property InstalledOn -ErrorAction SilentlyContinue | Out-File $resDir\hotfixes.txt
+Get-HotFix -ErrorAction SilentlyContinue 2>>$global:errfile | Sort-Object -Property InstalledOn -ErrorAction SilentlyContinue | Out-File $global:resDir\hotfixes.txt
 
 Write-Log "Collecting details about running processes"
 $proc = ExecQuery -Namespace "root\cimv2" -Query "select Name, CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine, ExecutablePath, ExecutionState from Win32_Process"
@@ -1039,7 +725,7 @@ if ($proc) {
   @{N="WorkingSet";E={"{0:N0}" -f ($_.WorkingSetSize/1kb)};a="right"},
   @{e={[DateTime]::FromFileTimeUtc($_.UserModeTime).ToString("HH:mm:ss")};n="UserTime"}, @{e={[DateTime]::FromFileTimeUtc($_.KernelModeTime).ToString("HH:mm:ss")};n="KernelTime"},
   @{N="Threads";E={$_.ThreadCount}}, @{N="Handles";E={($_.HandleCount)}}, @{N="State";E={($_.ExecutionState)}}, $StartTime, $Owner, CommandLine |
-  Out-String -Width 500 | Out-File -FilePath ($resDir + "\processes.txt")
+  Out-String -Width 500 | Out-File -FilePath ($global:resDir + "\processes.txt")
 
   Write-Log "Retrieving file version of running binaries"
   $binlist = $proc | Group-Object -Property ExecutablePath
@@ -1054,7 +740,7 @@ if ($proc) {
 
   if ($svc) {
     $svc | Sort-Object DisplayName | Format-Table -AutoSize -Property ProcessId, DisplayName, StartMode,State, Name, PathName, StartName |
-    Out-String -Width 400 | Out-File -FilePath ($resDir + "\services.txt")
+    Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\services.txt")
   }
 
   Write-Log "Collecting system information"
@@ -1065,37 +751,37 @@ if ($proc) {
   $TZ = ExecQuery -Namespace "root\cimv2" -Query "select Description from Win32_TimeZone"
   $PR = ExecQuery -Namespace "root\cimv2" -Query "select Name, Caption from Win32_Processor"
 
-  $ctr = Get-Counter -Counter "\Memory\Pool Paged Bytes" -ErrorAction Continue 2>>$errfile
+  $ctr = Get-Counter -Counter "\Memory\Pool Paged Bytes" -ErrorAction Continue 2>>$global:errfile
   $PoolPaged = $ctr.CounterSamples[0].CookedValue 
-  $ctr = Get-Counter -Counter "\Memory\Pool Nonpaged Bytes" -ErrorAction Continue 2>>$errfile
+  $ctr = Get-Counter -Counter "\Memory\Pool Nonpaged Bytes" -ErrorAction Continue 2>>$global:errfile
   $PoolNonPaged = $ctr.CounterSamples[0].CookedValue 
 
-  "Computer name".PadRight($pad) + " : " + $OS.CSName | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Model".PadRight($pad) + " : " + $CS.Model | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Manufacturer".PadRight($pad) + " : " + $CS.Manufacturer | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "BIOS Version".PadRight($pad) + " : " + $BIOS.BIOSVersion | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "BIOS Manufacturer".PadRight($pad) + " : " + $BIOS.Manufacturer | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "BIOS Release date".PadRight($pad) + " : " + $BIOS.ReleaseDate | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "SMBIOS Version".PadRight($pad) + " : " + $BIOS.SMBIOSBIOSVersion | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "SystemType".PadRight($pad) + " : " + $CS.SystemType | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Processor".PadRight($pad) + " : " + $PR.Name + " / " + $PR.Caption | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Processors physical/logical".PadRight($pad) + " : " + $CS.NumberOfProcessors + " / " + $CS.NumberOfLogicalProcessors | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Memory physical/visible".PadRight($pad) + " : " + ("{0:N0}" -f ($CS.TotalPhysicalMemory/1mb)) + " MB / " + ("{0:N0}" -f ($OS.TotalVisibleMemorySize/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Pool Paged / NonPaged".PadRight($pad) + " : " + ("{0:N0}" -f ($PoolPaged/1mb)) + " MB / " + ("{0:N0}" -f ($PoolNonPaged/1mb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Free physical memory".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.FreePhysicalMemory/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Paging files size / free".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.SizeStoredInPagingFiles/1kb)) + " MB / " + ("{0:N0}" -f ($OS.FreeSpaceInPagingFiles/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Operating System".PadRight($pad) + " : " + $OS.Caption + " " + $OS.OSArchitecture | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Build Number".PadRight($pad) + " : " + $OS.BuildNumber + "." + (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").ubr + (Win10Ver $OS.BuildNumber)| Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Time zone".PadRight($pad) + " : " + $TZ.Description | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Language packs".PadRight($pad) + " : " + ($OS.MUILanguages -join " ") | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Install date".PadRight($pad) + " : " + $OS.InstallDate | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Last boot time".PadRight($pad) + " : " + $OS.LastBootUpTime | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Local time".PadRight($pad) + " : " + $OS.LocalDateTime | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "DNS Hostname".PadRight($pad) + " : " + $CS.DNSHostName | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "DNS Domain name".PadRight($pad) + " : " + $CS.Domain | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "NetBIOS Domain name".PadRight($pad) + " : " + (GetNBDomainName) | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Computer name".PadRight($pad) + " : " + $OS.CSName | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Model".PadRight($pad) + " : " + $CS.Model | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Manufacturer".PadRight($pad) + " : " + $CS.Manufacturer | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "BIOS Version".PadRight($pad) + " : " + $BIOS.BIOSVersion | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "BIOS Manufacturer".PadRight($pad) + " : " + $BIOS.Manufacturer | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "BIOS Release date".PadRight($pad) + " : " + $BIOS.ReleaseDate | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "SMBIOS Version".PadRight($pad) + " : " + $BIOS.SMBIOSBIOSVersion | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "SystemType".PadRight($pad) + " : " + $CS.SystemType | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Processor".PadRight($pad) + " : " + $PR.Name + " / " + $PR.Caption | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Processors physical/logical".PadRight($pad) + " : " + $CS.NumberOfProcessors + " / " + $CS.NumberOfLogicalProcessors | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Memory physical/visible".PadRight($pad) + " : " + ("{0:N0}" -f ($CS.TotalPhysicalMemory/1mb)) + " MB / " + ("{0:N0}" -f ($OS.TotalVisibleMemorySize/1kb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Pool Paged / NonPaged".PadRight($pad) + " : " + ("{0:N0}" -f ($PoolPaged/1mb)) + " MB / " + ("{0:N0}" -f ($PoolNonPaged/1mb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Free physical memory".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.FreePhysicalMemory/1kb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Paging files size / free".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.SizeStoredInPagingFiles/1kb)) + " MB / " + ("{0:N0}" -f ($OS.FreeSpaceInPagingFiles/1kb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Operating System".PadRight($pad) + " : " + $OS.Caption + " " + $OS.OSArchitecture | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Build Number".PadRight($pad) + " : " + $OS.BuildNumber + "." + (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").ubr + (Win10Ver $OS.BuildNumber)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Time zone".PadRight($pad) + " : " + $TZ.Description | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Language packs".PadRight($pad) + " : " + ($OS.MUILanguages -join " ") | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Install date".PadRight($pad) + " : " + $OS.InstallDate | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Last boot time".PadRight($pad) + " : " + $OS.LastBootUpTime | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Local time".PadRight($pad) + " : " + $OS.LocalDateTime | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "DNS Hostname".PadRight($pad) + " : " + $CS.DNSHostName | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "DNS Domain name".PadRight($pad) + " : " + $CS.Domain | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "NetBIOS Domain name".PadRight($pad) + " : " + (GetNBDomainName) | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
   $roles = "Standalone Workstation", "Member Workstation", "Standalone Server", "Member Server", "Backup Domain Controller", "Primary Domain Controller"
-  "Domain role".PadRight($pad) + " : " + $roles[$CS.DomainRole] | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Domain role".PadRight($pad) + " : " + $roles[$CS.DomainRole] | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
 
   $drives = @()
   $drvtype = "Unknown", "No Root Directory", "Removable Disk", "Local Disk", "Network Drive", "Compact Disc", "RAM Disk"
@@ -1111,14 +797,14 @@ if ($proc) {
   }
   $drives | 
   Format-Table -AutoSize -property Letter, DriveType, VolumeName, @{N="TotalMB";E={"{0:N0}" -f ($_.TotalMB/1MB)};a="right"}, @{N="FreeMB";E={"{0:N0}" -f ($_.FreeMB/1MB)};a="right"} |
-  Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
 } else {
   $proc = Get-Process | Where-Object {$_.Name -ne "Idle"}
   $proc | Format-Table -AutoSize -property id, name, @{N="WorkingSet";E={"{0:N0}" -f ($_.workingset/1kb)};a="right"},
   @{N="VM Size";E={"{0:N0}" -f ($_.VirtualMemorySize/1kb)};a="right"},
   @{N="Proc time";E={($_.TotalProcessorTime.ToString().substring(0,8))}}, @{N="Threads";E={$_.threads.count}},
   @{N="Handles";E={($_.HandleCount)}}, StartTime, Path | 
-  Out-String -Width 300 | Out-File -FilePath ($resDir + "\processes.txt")
+  Out-String -Width 300 | Out-File -FilePath ($global:resDir + "\processes.txt")
 }
 
 Write-Diag ("[INFO] " + $DiagVersion)
