@@ -453,7 +453,7 @@ while (-not $sr.EndOfStream) {
           ForEach ($resrow in $xmlEvt.Envelope.body.PullResponse.Items.ChildNodes) {
             $rowval = ""
             ForEach ($colval in $resrow.FirstChild.ChildNodes) {
-              $rowval += ("""" + $resrow.FirstChild.ChildNodes[0].ReferenceParameters.SelectorSet.FirstChild.'#text' + """,")
+              $rowval += ("""" + $colval.ReferenceParameters.SelectorSet.FirstChild.'#text' + """,")
             }
             $rowval | Out-File -FilePath $fileCSV -Append
           }
