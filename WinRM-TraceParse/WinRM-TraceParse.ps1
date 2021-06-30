@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20210524
+# Version 20210630
 
 param (
   [string]$InputFile,
@@ -438,6 +438,33 @@ while (-not $sr.EndOfStream) {
         $row.Items = $xmlEvt.Envelope.body.PullResponse.Items.ChildNodes.Count
         if ($xmlEvt.Envelope.Body.PullResponse.EnumerationContext) {
           $row.EnumerationContext = $xmlEvt.Envelope.Body.PullResponse.EnumerationContext.Substring(5)
+        }
+
+        $objName = $row.RetObj.Replace("p:","")
+        $fileCSV = $dirName + "\" + $FileName.Replace("xml", $objName + ".csv")
+        $ColNames = ""
+        ForEach ($RetCol in $xmlEvt.Envelope.body.PullResponse.Items.ChildNodes[0].FirstChild.ChildNodes) {
+          $ColNames += ("""" + $RetCol.Name.replace("p:","") + """,")
+        }
+        $ColNames = $ColNames.Substring(0,$ColNames.Length-1)
+        $ColNames | Out-File -FilePath $fileCSV
+
+        if ($xmlEvt.Envelope.body.PullResponse.Items.ChildNodes[0].FirstChild.ChildNodes[0].ReferenceParameters) {
+          ForEach ($resrow in $xmlEvt.Envelope.body.PullResponse.Items.ChildNodes) {
+            $rowval = ""
+            ForEach ($colval in $resrow.FirstChild.ChildNodes) {
+              $rowval += ("""" + $resrow.FirstChild.ChildNodes[0].ReferenceParameters.SelectorSet.FirstChild.'#text' + """,")
+            }
+            $rowval | Out-File -FilePath $fileCSV -Append
+          }
+        } else {
+          ForEach ($resrow in $xmlEvt.Envelope.body.PullResponse.Items.ChildNodes) {
+            $rowval = ""
+            ForEach ($colval in $resrow.FirstChild.ChildNodes) {
+              $rowval += ("""" + $colval.'#text' + """,")
+            }
+            $rowval | Out-File -FilePath $fileCSV -Append
+          }
         }
 
       } elseif ($row.Message -eq "Release") {
