@@ -1,7 +1,7 @@
 param( [string]$Path, [switch]$AcceptEula )
 
 $version = "WinRM-Collect (20210810)"
-$DiagVersion = "WinRM-Diag (20210415)"
+$DiagVersion = "WinRM-Diag (20210810)"
 
 # by Gianni Bragante - gbrag@microsoft.com
 

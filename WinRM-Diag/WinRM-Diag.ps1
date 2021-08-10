@@ -1,5 +1,5 @@
 param( [string]$Path, [switch]$AcceptEula )
-$DiagVersion = "WinRM-Diag (20210622)"
+$DiagVersion = "WinRM-Diag (20210810)"
 # by Gianni Bragante gbrag@microsoft.com
 
 Function FindSep {
@@ -53,12 +53,16 @@ Function GetStore($store) {
     foreach ($ext in $cert.Extensions) {
       if ($ext.oid.value -eq "2.5.29.14") {
         $row.SubjectKeyIdentifier = $ext.SubjectKeyIdentifier.ToLower()
-      }
-      if (($ext.oid.value -eq "2.5.29.35") -or ($ext.oid.value -eq "2.5.29.1")) { 
+      } elseif (($ext.oid.value -eq "2.5.29.35") -or ($ext.oid.value -eq "2.5.29.1")) { 
         $asn = New-Object Security.Cryptography.AsnEncodedData ($ext.oid,$ext.RawData)
         $aki = $asn.Format($true).ToString().Replace(" ","")
         $aki = (($aki -split '\n')[0]).Replace("KeyID=","").Trim()
         $row.AuthorityKeyIdentifier = $aki
+      } elseif (($ext.oid.value -eq "1.3.6.1.4.1.311.21.7") -or ($ext.oid.value -eq "1.3.6.1.4.1.311.20.2")) { 
+        $asn = New-Object Security.Cryptography.AsnEncodedData ($ext.oid,$ext.RawData)
+        $tmpl = $asn.Format($true).ToString().Replace(" ","")
+        $template = (($tmpl -split '\n')[0]).Replace("Template=","").Trim()
+        $row.Template = $template
       }
     }
     if ($EKU) {$EKU = $eku.Substring(0, $eku.Length-3)} 
@@ -297,6 +301,7 @@ $col = New-Object system.Data.DataColumn EnhancedKeyUsage,([string]); $tbCert.Co
 $col = New-Object system.Data.DataColumn SerialNumber,([string]); $tbCert.Columns.Add($col)
 $col = New-Object system.Data.DataColumn SubjectKeyIdentifier,([string]); $tbCert.Columns.Add($col)
 $col = New-Object system.Data.DataColumn AuthorityKeyIdentifier,([string]); $tbCert.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Template,([string]); $tbCert.Columns.Add($col)
 
 Write-Diag ("[INFO] " + $DiagVersion)
 Write-Diag "[INFO] Retrieving certificates from LocalMachine\My store"
