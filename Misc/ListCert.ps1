@@ -22,7 +22,7 @@ Function GetStore($store) {
         $aki = $asn.Format($true).ToString().Replace(" ","")
         $aki = (($aki -split '\n')[0]).Replace("KeyID=","").Trim()
         $row.AuthorityKeyIdentifier = $aki
-      } elseif ($ext.oid.value -eq "1.3.6.1.4.1.311.21.7") { 
+      } elseif (($ext.oid.value -eq "1.3.6.1.4.1.311.21.7") -or ($ext.oid.value -eq "1.3.6.1.4.1.311.20.2")) { 
         $asn = New-Object Security.Cryptography.AsnEncodedData ($ext.oid,$ext.RawData)
         $tmpl = $asn.Format($true).ToString().Replace(" ","")
         $template = (($tmpl -split '\n')[0]).Replace("Template=","").Trim()
