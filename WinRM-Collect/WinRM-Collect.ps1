@@ -1,6 +1,6 @@
 param( [string]$Path, [switch]$AcceptEula )
 
-$version = "WinRM-Collect (20210622)"
+$version = "WinRM-Collect (20210810)"
 $DiagVersion = "WinRM-Diag (20210415)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -55,12 +55,16 @@ Function GetStore($store) {
     foreach ($ext in $cert.Extensions) {
       if ($ext.oid.value -eq "2.5.29.14") {
         $row.SubjectKeyIdentifier = $ext.SubjectKeyIdentifier.ToLower()
-      }
-      if (($ext.oid.value -eq "2.5.29.35") -or ($ext.oid.value -eq "2.5.29.1")) { 
+      } elseif (($ext.oid.value -eq "2.5.29.35") -or ($ext.oid.value -eq "2.5.29.1")) { 
         $asn = New-Object Security.Cryptography.AsnEncodedData ($ext.oid,$ext.RawData)
         $aki = $asn.Format($true).ToString().Replace(" ","")
         $aki = (($aki -split '\n')[0]).Replace("KeyID=","").Trim()
         $row.AuthorityKeyIdentifier = $aki
+      } elseif (($ext.oid.value -eq "1.3.6.1.4.1.311.21.7") -or ($ext.oid.value -eq "1.3.6.1.4.1.311.20.2")) { 
+        $asn = New-Object Security.Cryptography.AsnEncodedData ($ext.oid,$ext.RawData)
+        $tmpl = $asn.Format($true).ToString().Replace(" ","")
+        $template = (($tmpl -split '\n')[0]).Replace("Template=","").Trim()
+        $row.Template = $template
       }
     }
     if ($EKU) {$EKU = $eku.Substring(0, $eku.Length-3)} 
@@ -139,7 +143,7 @@ $diagfile = $global:resDir + "\WinRM-Diag.txt"
 $global:outfile = $global:resDir + "\script-output.txt"
 $global:errfile = $global:resDir + "\script-errors.txt"
 
-Import-Module ($global:Root + "\Collect-Commons.psm1") -Force
+Import-Module ($global:Root + "\Collect-Commons.psm1") -Force -DisableNameChecking
 
 $RdrOut =  " >>""" + $global:outfile + """"
 $RdrErr =  " 2>>""" + $global:errfile + """"
@@ -272,12 +276,12 @@ $cmd = "net localgroup ""WinRMRemoteWMIUsers__"" >>""" + $global:resDir + "\Grou
 Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
-Write-Log "Finding SID of WinRMRemoteWMIUsers__ group"
-$objUser = New-Object System.Security.Principal.NTAccount("WinRMRemoteWMIUsers__") -ErrorAction SilentlyContinue 2>>$global:errfile
-$strSID = $objUser.Translate([System.Security.Principal.SecurityIdentifier]).value
-
-$objSID = New-Object System.Security.Principal.SecurityIdentifier($strSID)
-$group = $objSID.Translate( [System.Security.Principal.NTAccount]).Value
+# We don't need this part because it is already covered by the WinRM-Diag output
+#Write-Log "Finding SID of WinRMRemoteWMIUsers__ group"
+#$objUser = New-Object System.Security.Principal.NTAccount("WinRMRemoteWMIUsers__") -ErrorAction SilentlyContinue 2>>$global:errfile
+#$strSID = $objUser.Translate([System.Security.Principal.SecurityIdentifier]).value
+#$objSID = New-Object System.Security.Principal.SecurityIdentifier($strSID)
+#$group = $objSID.Translate( [System.Security.Principal.NTAccount]).Value
 
 (" ") | Out-File -FilePath ($global:resDir + "\Groups.txt") -Append
 ($group + " = " + $strSID) | Out-File -FilePath ($global:resDir + "\Groups.txt") -Append
@@ -527,10 +531,10 @@ EvtLogDetails "Security"
 EvtLogDetails "ForwardedEvents"
 
 Write-Log "Autologgers configuration"
-Get-AutologgerConfig -Name EventLog-ForwardedEvents | Out-File -FilePath ($global:resDir + "\AutoLoggersConfiguration.txt") -Append
-Get-AutologgerConfig -Name EventLog-System | Out-File -FilePath ($global:resDir + "\AutoLoggersConfiguration.txt") -Append
-Get-AutologgerConfig -Name EventLog-Security| Out-File -FilePath ($global:resDir + "\AutoLoggersConfiguration.txt") -Append
-Get-AutologgerConfig -Name EventLog-Application| Out-File -FilePath ($global:resDir + "\AutoLoggersConfiguration.txt") -Append
+Get-AutologgerConfig -Name EventLog-ForwardedEvents -ErrorAction SilentlyContinue | Out-File -FilePath ($global:resDir + "\AutoLoggersConfiguration.txt") -Append
+Get-AutologgerConfig -Name EventLog-System -ErrorAction SilentlyContinue | Out-File -FilePath ($global:resDir + "\AutoLoggersConfiguration.txt") -Append
+Get-AutologgerConfig -Name EventLog-Security -ErrorAction SilentlyContinue | Out-File -FilePath ($global:resDir + "\AutoLoggersConfiguration.txt") -Append
+Get-AutologgerConfig -Name EventLog-Application -ErrorAction SilentlyContinue | Out-File -FilePath ($global:resDir + "\AutoLoggersConfiguration.txt") -Append
 
 if ($OSVer -gt 6.1 ) {
   Write-Log "Copying ServerManager configuration"
@@ -694,6 +698,7 @@ $col = New-Object system.Data.DataColumn EnhancedKeyUsage,([string]); $tbCert.Co
 $col = New-Object system.Data.DataColumn SerialNumber,([string]); $tbCert.Columns.Add($col)
 $col = New-Object system.Data.DataColumn SubjectKeyIdentifier,([string]); $tbCert.Columns.Add($col)
 $col = New-Object system.Data.DataColumn AuthorityKeyIdentifier,([string]); $tbCert.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Template,([string]); $tbCert.Columns.Add($col)
 
 GetStore "My"
 GetStore "CA"
@@ -748,62 +753,7 @@ if ($proc) {
     $svc | Sort-Object DisplayName | Format-Table -AutoSize -Property ProcessId, DisplayName, StartMode,State, Name, PathName, StartName |
     Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\services.txt")
   }
-
-  Write-Log "Collecting system information"
-  $pad = 27
-  $OS = ExecQuery -Namespace "root\cimv2" -Query "select Caption, CSName, OSArchitecture, BuildNumber, InstallDate, LastBootUpTime, LocalDateTime, TotalVisibleMemorySize, FreePhysicalMemory, SizeStoredInPagingFiles, FreeSpaceInPagingFiles, MUILanguages from Win32_OperatingSystem"
-  $CS = ExecQuery -Namespace "root\cimv2" -Query "select Model, Manufacturer, SystemType, NumberOfProcessors, NumberOfLogicalProcessors, TotalPhysicalMemory, DNSHostName, Domain, DomainRole from Win32_ComputerSystem"
-  $BIOS = ExecQuery -Namespace "root\cimv2" -query "select BIOSVersion, Manufacturer, ReleaseDate, SMBIOSBIOSVersion from Win32_BIOS"
-  $TZ = ExecQuery -Namespace "root\cimv2" -Query "select Description from Win32_TimeZone"
-  $PR = ExecQuery -Namespace "root\cimv2" -Query "select Name, Caption from Win32_Processor"
-
-  $ctr = Get-Counter -Counter "\Memory\Pool Paged Bytes" -ErrorAction Continue 2>>$global:errfile
-  $PoolPaged = $ctr.CounterSamples[0].CookedValue 
-  $ctr = Get-Counter -Counter "\Memory\Pool Nonpaged Bytes" -ErrorAction Continue 2>>$global:errfile
-  $PoolNonPaged = $ctr.CounterSamples[0].CookedValue 
-
-  "Computer name".PadRight($pad) + " : " + $OS.CSName | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "Model".PadRight($pad) + " : " + $CS.Model | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "Manufacturer".PadRight($pad) + " : " + $CS.Manufacturer | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "BIOS Version".PadRight($pad) + " : " + $BIOS.BIOSVersion | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "BIOS Manufacturer".PadRight($pad) + " : " + $BIOS.Manufacturer | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "BIOS Release date".PadRight($pad) + " : " + $BIOS.ReleaseDate | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "SMBIOS Version".PadRight($pad) + " : " + $BIOS.SMBIOSBIOSVersion | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "SystemType".PadRight($pad) + " : " + $CS.SystemType | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "Processor".PadRight($pad) + " : " + $PR.Name + " / " + $PR.Caption | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "Processors physical/logical".PadRight($pad) + " : " + $CS.NumberOfProcessors + " / " + $CS.NumberOfLogicalProcessors | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "Memory physical/visible".PadRight($pad) + " : " + ("{0:N0}" -f ($CS.TotalPhysicalMemory/1mb)) + " MB / " + ("{0:N0}" -f ($OS.TotalVisibleMemorySize/1kb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "Pool Paged / NonPaged".PadRight($pad) + " : " + ("{0:N0}" -f ($PoolPaged/1mb)) + " MB / " + ("{0:N0}" -f ($PoolNonPaged/1mb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "Free physical memory".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.FreePhysicalMemory/1kb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "Paging files size / free".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.SizeStoredInPagingFiles/1kb)) + " MB / " + ("{0:N0}" -f ($OS.FreeSpaceInPagingFiles/1kb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "Operating System".PadRight($pad) + " : " + $OS.Caption + " " + $OS.OSArchitecture | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "Build Number".PadRight($pad) + " : " + $OS.BuildNumber + "." + (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").ubr + (Win10Ver $OS.BuildNumber)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "Time zone".PadRight($pad) + " : " + $TZ.Description | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "Language packs".PadRight($pad) + " : " + ($OS.MUILanguages -join " ") | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "Install date".PadRight($pad) + " : " + $OS.InstallDate | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "Last boot time".PadRight($pad) + " : " + $OS.LastBootUpTime | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "Local time".PadRight($pad) + " : " + $OS.LocalDateTime | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "DNS Hostname".PadRight($pad) + " : " + $CS.DNSHostName | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "DNS Domain name".PadRight($pad) + " : " + $CS.Domain | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "NetBIOS Domain name".PadRight($pad) + " : " + (GetNBDomainName) | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  $roles = "Standalone Workstation", "Member Workstation", "Standalone Server", "Member Server", "Backup Domain Controller", "Primary Domain Controller"
-  "Domain role".PadRight($pad) + " : " + $roles[$CS.DomainRole] | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-
-  $drives = @()
-  $drvtype = "Unknown", "No Root Directory", "Removable Disk", "Local Disk", "Network Drive", "Compact Disc", "RAM Disk"
-  $Vol = ExecQuery -NameSpace "root\cimv2" -Query "select * from Win32_LogicalDisk"
-  foreach ($disk in $vol) {
-    $drv = New-Object PSCustomObject
-    $drv | Add-Member -type NoteProperty -name Letter -value $disk.DeviceID 
-    $drv | Add-Member -type NoteProperty -name DriveType -value $drvtype[$disk.DriveType]
-    $drv | Add-Member -type NoteProperty -name VolumeName -value $disk.VolumeName 
-    $drv | Add-Member -type NoteProperty -Name TotalMB -Value ($disk.size)
-    $drv | Add-Member -type NoteProperty -Name FreeMB -value ($disk.FreeSpace)
-    $drives += $drv
-  }
-  $drives | 
-  Format-Table -AutoSize -property Letter, DriveType, VolumeName, @{N="TotalMB";E={"{0:N0}" -f ($_.TotalMB/1MB)};a="right"}, @{N="FreeMB";E={"{0:N0}" -f ($_.FreeMB/1MB)};a="right"} |
-  Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  Collect-SystemInfo
 } else {
   $proc = Get-Process | Where-Object {$_.Name -ne "Idle"}
   $proc | Format-Table -AutoSize -property id, name, @{N="WorkingSet";E={"{0:N0}" -f ($_.workingset/1kb)};a="right"},
