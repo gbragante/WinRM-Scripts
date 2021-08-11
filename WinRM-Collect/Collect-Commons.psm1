@@ -66,7 +66,34 @@ Function Win10Ver {
   }
 }
 
-Function Collect-SystemInfo {
+Function Collect-SystemInfoNoWMI {
+  Write-Log "Collecting system information"
+  $pad = 27
+
+  $ctr = Get-Counter -Counter "\Memory\Pool Paged Bytes" -ErrorAction Continue 2>>$global:errfile
+  $PoolPaged = $ctr.CounterSamples[0].CookedValue 
+  $ctr = Get-Counter -Counter "\Memory\Pool Nonpaged Bytes" -ErrorAction Continue 2>>$global:errfile
+  $PoolNonPaged = $ctr.CounterSamples[0].CookedValue 
+  $proc = Get-Process | Select-Object Name, ID, Handles, @{Name='ThreadCount';Expression ={$_.Threads.Count}}
+
+  "Computer name".PadRight($pad) + " : " + $env:COMPUTERNAME | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Processor".PadRight($pad) + " : " + $env:PROCESSOR_IDENTIFIER | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Processors cores".PadRight($pad) + " : " + $env:NUMBER_OF_PROCESSORS | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Pool Paged / NonPaged".PadRight($pad) + " : " + ("{0:N0}" -f ($PoolPaged/1mb)) + " MB / " + ("{0:N0}" -f ($PoolNonPaged/1mb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Total number of processes".PadRight($pad) + " : " + ("{0:N0}" -f ($proc.Count))| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Total number of threads".PadRight($pad) + " : " + ("{0:N0}" -f ($proc | Measure-Object -Property ThreadCount -Sum).Sum)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Total number of handles".PadRight($pad) + " : " + ("{0:N0}" -f ($proc | Measure-Object -Property Handles -Sum).Sum)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Operating System".PadRight($pad) + " : " + [System.Environment]::OSVersion.VersionString | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Build Number".PadRight($pad) + " : " + (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").ubr + (Win10Ver $OS.BuildNumber)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Time zone".PadRight($pad) + " : " + (Get-TimeZone).DisplayName | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Local time".PadRight($pad) + " : " + (Get-Date) | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "NetBIOS Domain name".PadRight($pad) + " : " + (GetNBDomainName) | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+
+  Write-Log "Exporing environment variables"
+  Get-ChildItem env: | Out-File -FilePath ($global:resDir + "\EnvironmentVariables.txt") -Append
+}
+
+Function Collect-SystemInfoWMI {
   Write-Log "Collecting system information"
   $pad = 27
   $OS = ExecQuery -Namespace "root\cimv2" -Query "select Caption, CSName, OSArchitecture, BuildNumber, InstallDate, LastBootUpTime, LocalDateTime, TotalVisibleMemorySize, FreePhysicalMemory, SizeStoredInPagingFiles, FreeSpaceInPagingFiles, MUILanguages from Win32_OperatingSystem"
@@ -74,6 +101,7 @@ Function Collect-SystemInfo {
   $BIOS = ExecQuery -Namespace "root\cimv2" -query "select BIOSVersion, Manufacturer, ReleaseDate, SMBIOSBIOSVersion from Win32_BIOS"
   $TZ = ExecQuery -Namespace "root\cimv2" -Query "select Description from Win32_TimeZone"
   $PR = ExecQuery -Namespace "root\cimv2" -Query "select Name, Caption from Win32_Processor"
+  $proc = Get-Process | Select-Object Name, ID, Handles, @{Name='ThreadCount';Expression ={$_.Threads.Count}}
 
   $ctr = Get-Counter -Counter "\Memory\Pool Paged Bytes" -ErrorAction Continue 2>>$global:errfile
   $PoolPaged = $ctr.CounterSamples[0].CookedValue 
@@ -94,6 +122,9 @@ Function Collect-SystemInfo {
   "Pool Paged / NonPaged".PadRight($pad) + " : " + ("{0:N0}" -f ($PoolPaged/1mb)) + " MB / " + ("{0:N0}" -f ($PoolNonPaged/1mb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
   "Free physical memory".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.FreePhysicalMemory/1kb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
   "Paging files size / free".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.SizeStoredInPagingFiles/1kb)) + " MB / " + ("{0:N0}" -f ($OS.FreeSpaceInPagingFiles/1kb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Total number of processes".PadRight($pad) + " : " + ("{0:N0}" -f ($proc.Count))| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Total number of threads".PadRight($pad) + " : " + ("{0:N0}" -f ($proc | Measure-Object -Property ThreadCount -Sum).Sum)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Total number of handles".PadRight($pad) + " : " + ("{0:N0}" -f ($proc | Measure-Object -Property Handles -Sum).Sum)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
   "Operating System".PadRight($pad) + " : " + $OS.Caption + " " + $OS.OSArchitecture | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
   "Build Number".PadRight($pad) + " : " + $OS.BuildNumber + "." + (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").ubr + (Win10Ver $OS.BuildNumber)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
   "Time zone".PadRight($pad) + " : " + $TZ.Description | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
@@ -122,6 +153,9 @@ Function Collect-SystemInfo {
   $drives | 
   Format-Table -AutoSize -property Letter, DriveType, VolumeName, @{N="TotalMB";E={"{0:N0}" -f ($_.TotalMB/1MB)};a="right"}, @{N="FreeMB";E={"{0:N0}" -f ($_.FreeMB/1MB)};a="right"} |
   Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+
+  Write-Log "Exporing environment variables"
+  Get-ChildItem env: | Out-File -FilePath ($global:resDir + "\EnvironmentVariables.txt") -Append
 }
 
 Add-Type -MemberDefinition @"
