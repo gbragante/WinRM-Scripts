@@ -1,7 +1,7 @@
 param( [string]$Path, [switch]$AcceptEula )
 
-$version = "WinRM-Collect (20210818)"
-$DiagVersion = "WinRM-Diag (20210817)"
+$version = "WinRM-Collect (20210820)"
+$DiagVersion = "WinRM-Diag (20210820)"
 
 # by Gianni Bragante - gbrag@microsoft.com
 
@@ -1004,6 +1004,10 @@ if (Test-Path -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventFor
         }
       }
     } 
+  }
+  $RegKey = (Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventForwarding')
+  if ($regkey.MaxForwardingRate) {
+    Write-Diag "[ERROR] MaxForwardingRate is configured, this feature does not work. Please remove this setting and see bug 33554568."
   }
 } else {
   $isForwarder = $false
