@@ -1,7 +1,7 @@
 param( [string]$Path, [switch]$AcceptEula )
 
-$version = "WinRM-Collect (20210811)"
-$DiagVersion = "WinRM-Diag (20210810)"
+$version = "WinRM-Collect (20210818)"
+$DiagVersion = "WinRM-Diag (20210817)"
 
 # by Gianni Bragante - gbrag@microsoft.com
 
@@ -897,6 +897,15 @@ $svccert = Get-Item WSMan:\localhost\Service\CertificateThumbprint
 if ($svccert.value ) {
   Write-Diag ("[INFO] The Service Certificate thumbprint is " + $svccert.value)
   ChkCert -cert $svccert.value -descr "Service" -store "Store = 'My'"
+}
+
+$remoteaccess = Get-Item WSMan:\localhost\Service\AllowRemoteAccess
+if ($remoteaccess.Value -eq "true") {
+  Write-Diag "[INFO] AllowRemoteAccess = true"
+} elseif ($remoteaccess.Value -eq "false") {
+  Write-Diag "[ERROR] AllowRemoteAccess = false, this machine will not accept remote WinRM connections"
+} else {
+  Write-Diag "[ERROR] AllowRemoteAccess has an invalid value"
 }
 
 $ipfilter = Get-Item WSMan:\localhost\Service\IPv4Filter
