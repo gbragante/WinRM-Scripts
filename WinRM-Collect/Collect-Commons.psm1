@@ -1,3 +1,5 @@
+# Collect-Commons 20210930
+
 Function Write-Log {
   param( [string] $msg )
 
@@ -43,6 +45,8 @@ Function Win10Ver {
     [string] $Build
   )
 
+  # See https://www.osgwiki.com/wiki/WSD_Wiki-CFE_Decrypting_Windows_Release_Names
+
   if ($build -eq 14393) {
     return " (RS1 / 1607)"
   } elseif ($build -eq 15063) {
@@ -58,11 +62,17 @@ Function Win10Ver {
   } elseif ($build -eq 18363) {
     return " (19H2 / 1909)"    
   } elseif ($build -eq 19041) {
-    return " (20H1)"  
+    return " (2004 / vb)"  
   } elseif ($build -eq 19042) {
-    return " (20H2)"  
+    return " (20H2 / vb)"  
   } elseif ($build -eq 19043) {
-    return " (21H1)"  
+    return " (21H1 / vb)"  
+  } elseif ($build -eq 19044) {
+    return " (21H2 / vb)"  
+  } elseif ($build -eq 20348) {
+    return " (21H1 / fe)"  
+  } elseif ($build -eq 22000) {
+    return " (21H2 / co)"  
   }
 }
 

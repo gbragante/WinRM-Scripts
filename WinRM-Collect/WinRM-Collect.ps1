@@ -1,7 +1,7 @@
 param( [string]$Path, [switch]$AcceptEula )
 
-$version = "WinRM-Collect (20210820)"
-$DiagVersion = "WinRM-Diag (20210820)"
+$version = "WinRM-Collect (20210930)"
+$DiagVersion = "WinRM-Diag (20210930)"
 
 # by Gianni Bragante - gbrag@microsoft.com
 
@@ -932,6 +932,12 @@ if ($ipfilter.Value) {
 
 if (Test-Path -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventForwarding\SubscriptionManager") {
   $isForwarder = $True
+
+  $MaxFwd = (Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventForwarding').MaxForwardingRate
+  if ($MaxFwd) {
+    Write-Diag ("[ERROR] HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventForwarding\MaxForwardingRate is set to " + $MaxFwd + ". This functionality is broken, see Bug 33554568. Remove the setting Configure Forwarder Resource Usage from the GPO to avoid performance issues")
+  }
+
   $RegKey = (Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventForwarding\SubscriptionManager')
 
   Write-Diag "[INFO] Enumerating SubscriptionManager URLs at HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventForwarding\SubscriptionManager"
@@ -1007,7 +1013,7 @@ if (Test-Path -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventFor
   }
   $RegKey = (Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventForwarding')
   if ($regkey.MaxForwardingRate) {
-    Write-Diag "[ERROR] MaxForwardingRate is configured, this feature does not work. Please remove this setting and see bug 33554568."
+    Write-Diag "[ERROR] MaxForwardingRate is configured, this feature does not work. Please remove this setting and see bug 33554568"
   }
 } else {
   $isForwarder = $false
@@ -1107,6 +1113,14 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
   }  else {
     Write-Diag "[INFO] Certificate authentication is enabled for the service"
   }
+}
+
+$HHTPParam = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters"
+if (($HHTPParam.MaxFieldLength -gt 0) -and ($HHTPParam.MaxRequestBytes -gt 0)) {
+  Write-Diag ("[INFO] HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters\MaxFieldLength = " + $HHTPParam.MaxFieldLength)
+  Write-Diag ("[INFO] HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters\MaxRequestBytes = " + $HHTPParam.MaxRequestBytes)
+} else {
+  Write-Diag ("[WARNING] MaxFieldLength and/or MaxRequestBytes are not defined in HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters. This may cause the request to fail with error 400 in complex AD environemnts. See KB 820129")
 }
 
 $iplisten = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters" | Select-Object -ExpandProperty "ListenOnlyList" -ErrorAction SilentlyContinue)
