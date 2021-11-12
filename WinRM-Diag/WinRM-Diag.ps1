@@ -767,7 +767,7 @@ if ($isForwarder) {
   }
 }
 
-$fwrules = (Get-NetFirewallPortFilter –Protocol TCP | Where { $_.localport –eq ‘5986’ } | Get-NetFirewallRule)
+$fwrules = (Get-NetFirewallPortFilter -Protocol TCP | Where { $_.localport -eq "5986" } | Get-NetFirewallRule)
 if ($fwrules.count -eq 0) {
   Write-Diag "[INFO] No firewall rule for port 5986"
 } else {
