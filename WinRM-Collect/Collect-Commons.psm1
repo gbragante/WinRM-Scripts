@@ -1,4 +1,4 @@
-# Collect-Commons 20210930
+# Collect-Commons 20211112
 
 Function Write-Log {
   param( [string] $msg )
@@ -19,18 +19,34 @@ Function ExecQuery {
   } else {
     $ret = Get-WmiObject -Namespace $NameSpace -Query $Query -ErrorAction Continue 2>>$errfile
   }
-  Write-Log (($ret | measure).count.ToString() + " results")
+  Write-Log (($ret | Measure-Object).count.ToString() + " results")
   return $ret
 }
 
 Function Get-ProcBitness {
   param ([int] $id)
-  $proc = Get-Process -Id $id -ErrorAction SilentlyContinue
-  if ($proc) {
-    Return ("(" + $proc.StartInfo.EnvironmentVariables["PROCESSOR_ARCHITECTURE"] + ")")
+  if ($PSVersionTable.PSEdition -eq "Core") {
+      Return ""  # StartInfo is not availabe in PowerShell Core, investigating for an alternative
   } else {
-    Return "Unknown"
+    $proc = Get-Process -Id $id -ErrorAction SilentlyContinue
+    if ($proc) {
+      Return ("(" + $proc.StartInfo.EnvironmentVariables["PROCESSOR_ARCHITECTURE"] + ")")
+    } else {
+      Return ""
+    }
   }
+}
+
+Function GetOwnerCim{
+  param( $prc )
+  $ret = Invoke-CimMethod -InputObject $prc -MethodName GetOwner
+  return ($ret.Domain + "\" + $ret.User)
+}
+
+Function GetOwnerWmi{
+  param( $prc )
+  $ret = $prc.GetOwner()
+  return ($ret.Domain + "\" + $ret.User)
 }
 
 Function ArchiveLog {
@@ -99,8 +115,7 @@ Function Collect-SystemInfoNoWMI {
   "Local time".PadRight($pad) + " : " + (Get-Date) | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
   "NetBIOS Domain name".PadRight($pad) + " : " + (GetNBDomainName) | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
 
-  Write-Log "Exporing environment variables"
-  Get-ChildItem env: | Out-File -FilePath ($global:resDir + "\EnvironmentVariables.txt") -Append
+  ExpEnvVar
 }
 
 Function Collect-SystemInfoWMI {
@@ -164,8 +179,18 @@ Function Collect-SystemInfoWMI {
   Format-Table -AutoSize -property Letter, DriveType, VolumeName, @{N="TotalMB";E={"{0:N0}" -f ($_.TotalMB/1MB)};a="right"}, @{N="FreeMB";E={"{0:N0}" -f ($_.FreeMB/1MB)};a="right"} |
   Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
 
+  ExpEnvVar
+}
+
+Function ExpEnvVar {
   Write-Log "Exporing environment variables"
   Get-ChildItem env: | Out-File -FilePath ($global:resDir + "\EnvironmentVariables.txt") -Append
+}
+
+Function ExpRegFeatureManagement {
+  Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides "
+  $cmd = "reg export ""HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides "" """+ $global:resDir + "\FeatureManagement.reg.txt"" /y >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
+  Invoke-Expression $cmd
 }
 
 Add-Type -MemberDefinition @"
@@ -196,7 +221,7 @@ $UserDumpCode=@'
 using System;
 using System.Runtime.InteropServices;
 
-namespace MSDATA
+namespace MSCOLLECT
 {
     public static class UserDump
     {
@@ -281,7 +306,17 @@ Function CreateProcDump {
   $DumpFile = $DumpFolder + "\" + $filename + "-" + $ProcID + "_" + (get-date).ToString("yyyyMMdd_HHmmss") + ".dmp"
   
   if (Test-Path ($global:root + "\procdump.exe")) {
-    $cmd = "&""" + $global:root + "\procdump.exe"" -accepteula -ma $ProcID """ + $DumpFile + """ >>""" + $global:outfile + """ 2>>""" + $errfile + """"
+    $ProcDumpPath = $global:root + "\procdump.exe"
+    Write-Log ("ProcDump found in " + $ProcDumpPath)
+  } else {
+    if (Test-Path (($global:root | Split-Path) + "\bin\procdump.exe")) {
+      $ProcDumpPath = ($global:root | Split-Path) + "\bin\procdump.exe"
+      Write-Log ("ProcDump found in " + $ProcDumpPath)
+    }
+  }
+
+  if ($ProcDumpPath) {
+    $cmd = "&""" + $ProcDumpPath + """ -accepteula -ma $ProcID """ + $DumpFile + """ >>""" + $global:outfile + """ 2>>""" + $errfile + """"
     Write-Log $cmd
     Invoke-Expression $cmd
 
@@ -300,7 +335,7 @@ Function CreateProcDump {
 
   if (-not $DumpCreated) {
     Write-Log "Cannot create the dump with ProcDump, trying the backup method"
-    if ([MSDATA.UserDump]::GenerateUserDump($ProcID, $DumpFile)) {
+    if ([MSCOLLECT.UserDump]::GenerateUserDump($ProcID, $DumpFile)) {
       Write-Log ("The dump for the Process ID $ProcID was generated as $DumpFile")
     } else {
       Write-Log "Failed to create the dump for the Process ID $ProcID"
@@ -315,11 +350,11 @@ using System.Diagnostics;
 using System.Threading;
 using System.Runtime.InteropServices;
 
-namespace MSDATA {
+namespace MSCOLLECT {
   public static class FindService {
 
     public static void Main(){
-	  Console.WriteLine("Hello world!");
+	  // empty function
 	}
 
     [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
@@ -339,7 +374,6 @@ namespace MSDATA {
     public static extern bool QueryServiceStatusEx(IntPtr serviceHandle, int infoLevel, IntPtr buffer, int bufferSize, out int bytesNeeded);
 
     public static int FindServicePid(string SvcName) {
-      //Console.WriteLine("Hello world!");
       ServiceController sc = new ServiceController(SvcName);
       if (sc == null) {
         return -1;
@@ -368,12 +402,16 @@ namespace MSDATA {
   }
 }
 '@
-add-type -TypeDefinition $FindPIDCode -Language CSharp -ReferencedAssemblies System.ServiceProcess
+if ($PSVersionTable.PSEdition -eq "Core") {
+  add-type -TypeDefinition $FindPIDCode -Language CSharp -ReferencedAssemblies System.ServiceProcess.ServiceController, System.ComponentModel.Primitives
+} else {
+  add-type -TypeDefinition $FindPIDCode -Language CSharp -ReferencedAssemblies System.ServiceProcess
+}
 
 Function FindServicePid {
   param( $SvcName)
   try {
-    $pidsvc = [MSDATA.FindService]::FindServicePid($SvcName)
+    $pidsvc = [MSCOLLECT.FindService]::FindServicePid($SvcName)
     return $pidsvc
   }
   catch {

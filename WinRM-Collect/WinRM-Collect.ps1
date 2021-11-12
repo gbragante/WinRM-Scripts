@@ -1,6 +1,6 @@
-param( [string]$Path, [switch]$AcceptEula )
+param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "WinRM-Collect (20210930)"
+$version = "WinRM-Collect (20211112)"
 $DiagVersion = "WinRM-Diag (20210930)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -135,11 +135,28 @@ if (-not $myWindowsPrincipal.IsInRole($adminRole)) {
 }
 
 $global:Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
-
 $resName = "WinRM-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
-$global:resDir = $global:Root + "\" + $resName
-$diagfile = $global:resDir + "\WinRM-Diag.txt"
+if ($DataPath) {
+  if (-not (Test-Path $DataPath)) {
+    Write-Host "The folder $DataPath does not exist"
+    exit
+  }
+  $global:resDir = $DataPath + "\" + $resName
+} else {
 
+  $global:resDir = $global:Root + "\" + $resName
+}if ($DataPath) {
+  if (-not (Test-Path $DataPath)) {
+    Write-Host "The folder $DataPath does not exist"
+    exit
+  }
+  $global:resDir = $DataPath + "\" + $resName
+} else {
+
+  $global:resDir = $global:Root + "\" + $resName
+}
+
+$diagfile = $global:resDir + "\WinRM-Diag.txt"
 $global:outfile = $global:resDir + "\script-output.txt"
 $global:errfile = $global:resDir + "\script-errors.txt"
 
@@ -1212,7 +1229,7 @@ if ($isForwarder) {
   }
 }
 
-$fwrules = (Get-NetFirewallPortFilter –Protocol TCP | Where { $_.localport –eq ‘5986’ } | Get-NetFirewallRule)
+$fwrules = (Get-NetFirewallPortFilter -Protocol TCP | Where { $_.localport -eq "5986" } | Get-NetFirewallRule)
 if ($fwrules.count -eq 0) {
   Write-Diag "[INFO] No firewall rule for port 5986"
 } else {
