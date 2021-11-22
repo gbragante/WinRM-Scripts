@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "WinRM-Collect (20211112)"
+$version = "WinRM-Collect (20211122)"
 $DiagVersion = "WinRM-Diag (20210930)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -293,13 +293,6 @@ $cmd = "net localgroup ""WinRMRemoteWMIUsers__"" >>""" + $global:resDir + "\Grou
 Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
-# We don't need this part because it is already covered by the WinRM-Diag output
-#Write-Log "Finding SID of WinRMRemoteWMIUsers__ group"
-#$objUser = New-Object System.Security.Principal.NTAccount("WinRMRemoteWMIUsers__") -ErrorAction SilentlyContinue 2>>$global:errfile
-#$strSID = $objUser.Translate([System.Security.Principal.SecurityIdentifier]).value
-#$objSID = New-Object System.Security.Principal.SecurityIdentifier($strSID)
-#$group = $objSID.Translate( [System.Security.Principal.NTAccount]).Value
-
 (" ") | Out-File -FilePath ($global:resDir + "\Groups.txt") -Append
 ($group + " = " + $strSID) | Out-File -FilePath ($global:resDir + "\Groups.txt") -Append
 
@@ -355,15 +348,9 @@ $cmd = "netsh advfirewall firewall show rule name=all >""" + $global:resDir + "\
 Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
-Write-Log "Exporting netstat output"
-$cmd = "netstat -anob >""" + $global:resDir + "\netstat.txt""" + $RdrErr
-Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
-
-Write-Log "Exporting ipconfig /all output"
-$cmd = "ipconfig /all >""" + $global:resDir + "\ipconfig.txt""" + $RdrErr
-Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
+Invoke-CustomCommand -Command "netstat -anob" -DestinationFile "netstat.txt"
+Invoke-CustomCommand -Command "ipconfig /all" -DestinationFile "ipconfig.txt"
+Invoke-CustomCommand -Command "auditpol /get /category:*" -DestinationFile "auditpol.txt"
 
 Write-Log "Copying hosts and lmhosts"
 if (Test-path -path C:\Windows\system32\drivers\etc\hosts) {
@@ -770,7 +757,7 @@ if ($proc) {
     $svc | Sort-Object DisplayName | Format-Table -AutoSize -Property ProcessId, DisplayName, StartMode,State, Name, PathName, StartName |
     Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\services.txt")
   }
-  Collect-SystemInfoWMI
+  CollectSystemInfoWMI
   ExecQuery -Namespace "root\cimv2" -Query "select * from Win32_Product" | Sort-Object Name | Format-Table -AutoSize -Property Name, Version, Vendor, InstallDate | Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\products.txt")
 } else {
   $proc = Get-Process | Where-Object {$_.Name -ne "Idle"}
@@ -779,7 +766,7 @@ if ($proc) {
   @{N="Proc time";E={($_.TotalProcessorTime.ToString().substring(0,8))}}, @{N="Threads";E={$_.threads.count}},
   @{N="Handles";E={($_.HandleCount)}}, StartTime, Path | 
   Out-String -Width 300 | Out-File -FilePath ($global:resDir + "\processes.txt")
-  Collect-SystemInfoNoWMI
+  CollectSystemInfoNoWMI
 }
 
 Write-Diag ("[INFO] " + $DiagVersion)
