@@ -1,7 +1,7 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
 $version = "WinRM-Collect (20211122)"
-$DiagVersion = "WinRM-Diag (20210930)"
+$DiagVersion = "WinRM-Diag (20211122)"
 
 # by Gianni Bragante - gbrag@microsoft.com
 
@@ -870,10 +870,14 @@ if ($OSVer -gt 6.1) {
 }
 
 Write-Diag "[INFO] Browsing listeners"
+$HTTPListenerFound = $false
 $listeners = Get-ChildItem WSMan:\localhost\Listener
 foreach ($listener in $listeners) {
   Write-Diag ("[INFO] Inspecting listener " + $listener.Name)
   $prop = Get-ChildItem $listener.PSPath
+  if ($listener.keys[0] -eq "Transport=HTTP") {
+    $HTTPListenerFound = $true
+  }
   foreach ($value in $prop) {
     if ($value.Name -eq "CertificateThumbprint") {
       if ($listener.keys[0].Contains("HTTPS")) {
@@ -896,6 +900,12 @@ foreach ($listener in $listeners) {
     }
   } 
 } 
+
+if ($HTTPListenerFound) {
+  Write-Diag ("[INFO] HTTP listener found")
+} else {
+  Write-Diag ("[ERROR] The HTTP listener is missing")
+}
 
 $svccert = Get-Item WSMan:\localhost\Service\CertificateThumbprint
 if ($svccert.value ) {
@@ -1024,7 +1034,7 @@ if (Test-Path -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventFor
   Write-Diag "[INFO] No SubscriptionManager URL configured. It's ok if this machine is not supposed to forward events."
 }
 
-if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
+if ((Get-CimInstance -ClassName Win32_ComputerSystem).PartOfDomain) {
   $search = New-Object DirectoryServices.DirectorySearcher([ADSI]"GC://$env:USERDNSDOMAIN") # The SPN is searched in the forest connecting to a Global catalog
 
   $SPNReg = ""
@@ -1089,12 +1099,12 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
     } elseif ($results.Properties.grouptype -eq -2147483640) {
       Write-Diag "[WARNING] WinRMRemoteWMIUsers__ is a Universal group"
     }
-    if (Get-WmiObject -query "select * from Win32_Group where Name = 'WinRMRemoteWMIUsers__' and Domain = '$env:computername'") {
+    if (Get-CimInstance -Query "select * from Win32_Group where Name = 'WinRMRemoteWMIUsers__' and Domain = '$env:computername'") {
       Write-Diag "[INFO] The group WinRMRemoteWMIUsers__ is also present as machine local group"
     }
   } else {
     Write-Diag "[ERROR] The WinRMRemoteWMIUsers__ was not found in the domain" 
-    if (Get-WmiObject -query "select * from Win32_Group where Name = 'WinRMRemoteWMIUsers__' and Domain = '$env:computername'") {
+    if (Get-CimInstance -Query "select * from Win32_Group where Name = 'WinRMRemoteWMIUsers__' and Domain = '$env:computername'") {
       Write-Diag "[INFO] The group WinRMRemoteWMIUsers__ is present as machine local group"
     } else {
       Write-Diag "[ERROR] The group WinRMRemoteWMIUsers__ is not even present as machine local group"
@@ -1107,7 +1117,7 @@ if ((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
   }
 } else {
   Write-Diag "[INFO] The machine is not joined to a domain"
-  if (Get-WmiObject -query "select * from Win32_Group where Name = 'WinRMRemoteWMIUsers__' and Domain = '$env:computername'") {
+  if (Get-CimInstance -Query "select * from Win32_Group where Name = 'WinRMRemoteWMIUsers__' and Domain = '$env:computername'") {
     Write-Diag "[INFO] The group WinRMRemoteWMIUsers__ is present as machine local group"
   } else {
     Write-Diag "[ERROR] The group WinRMRemoteWMIUsers__ is not present as machine local group"
@@ -1176,7 +1186,7 @@ if ($clientcert.Count -gt 0) {
       if ($value.Name -eq "Issuer") {
         ChkCert -cert $value.Value -descr "mapping" -store "(Store = 'Root' or Store = 'CA')"
       } elseif ($value.Name -eq "UserName") {
-        $usr = Get-WmiObject -class Win32_UserAccount | Where {$_.Name -eq $value.value}
+        $usr = Get-CimInstance -ClassName Win32_UserAccount | Where {$_.Name -eq $value.value}
         if ($usr) {
           if ($usr.Disabled) {
             Write-Diag ("[ERROR]    The local user account " + $value.value + " is disabled")
@@ -1208,7 +1218,7 @@ if ($aCert.Count -gt 0) {
 }
 
 if ($isForwarder) {
-  $evtLogReaders = (Get-WmiObject -Query ("Associators of {Win32_Group.Domain='" + $env:COMPUTERNAME + "',Name='Event Log Readers'} where Role=GroupComponent") | Where {$_.Name -eq "NETWORK SERVICE"} | Measure-Object)
+  $evtLogReaders = (Get-CimInstance -Query ("Associators of {Win32_Group.Domain='" + $env:COMPUTERNAME + "',Name='Event Log Readers'} where Role=GroupComponent") | Where {$_.Name -eq "NETWORK SERVICE"} | Measure-Object)
   if ($evtLogReaders.Count -gt 0) {
     Write-Diag "[INFO] The NETWORK SERVICE account is member of the Event Log Readers group"
   } else {
