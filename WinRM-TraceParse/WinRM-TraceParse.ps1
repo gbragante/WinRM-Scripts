@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20211102
+# Version 20211222
 
 param (
   [string]$InputFile,
@@ -320,7 +320,11 @@ while (-not $sr.EndOfStream) {
           $row.Message = $xmlEvt.Envelope.Body.Fault.Reason.text.'#text'
         }
       } else {
-        $row.Message = ($xmlEvt.Envelope.Header.Action | Split-Path -Leaf)
+        if ($xmlEvt.Envelope.Header.Action.'#text') {
+          $row.Message = ($xmlEvt.Envelope.Header.Action.'#text'| Split-Path -Leaf)
+        } else {
+          $row.Message = ($xmlEvt.Envelope.Header.Action | Split-Path -Leaf)
+        }
       }
 
       if ($xmlEvt.Envelope.Header.MessageID.HasAttributes) {
@@ -548,13 +552,14 @@ while (-not $sr.EndOfStream) {
     }
       
     if ($xmlEvt.Envelope.Header.OperationID.HasAttributes) {
-      $OpId = ($xmlEvt.Envelope.Header.OperationID.'#text').substring(5)
+      $OpId = ($xmlEvt.Envelope.Header.OperationID.'#text').substring(5).Replace("uuid:","")  # Some lines contains "uuid:uuid:"
     } else {
       $OpId = $xmlEvt.Envelope.Header.OperationID
       if ($OpId) {
-        $OpId = $OpId.substring(5)
+        $OpId = $OpId.substring(5).Replace("uuid:","")  # Some lines contains "uuid:uuid:"
       }
     }
+
     if ($xmlEvt.Envelope.Header.SessionID) {
       if ($xmlEvt.Envelope.Header.SessionID.HasAttributes) {
         $SessID = ($xmlEvt.Envelope.Header.SessionID.'#text').substring(5)
