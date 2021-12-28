@@ -1,4 +1,4 @@
-# Collect-Commons 20211122
+# Collect-Commons 20211224
 
 Function Write-Log {
   param( [string] $msg )
@@ -23,17 +23,40 @@ Function ExecQuery {
   return $ret
 }
 
+if ($PSVersionTable.PSEdition -eq "Core") {
+  Add-Type -MemberDefinition @'
+  [DllImport("kernel32.dll", SetLastError = true, CallingConvention = CallingConvention.Winapi)] [return: MarshalAs(UnmanagedType.Bool)]
+  public static extern bool IsWow64Process(
+    [In] System.IntPtr hProcess,
+    [Out, MarshalAs(UnmanagedType.Bool)] out bool wow64Process);
+'@ -Name NativeMethods -Namespace Kernel32
+}
+
 Function Get-ProcBitness {
   param ([int] $id)
-  if ($PSVersionTable.PSEdition -eq "Core") {
-      Return ""  # StartInfo is not availabe in PowerShell Core, investigating for an alternative
-  } else {
-    $proc = Get-Process -Id $id -ErrorAction SilentlyContinue
-    if ($proc) {
-      Return ("(" + $proc.StartInfo.EnvironmentVariables["PROCESSOR_ARCHITECTURE"] + ")")
+  $proc = Get-Process -Id $id -ErrorAction SilentlyContinue
+  if ($proc) {
+    if ($PSVersionTable.PSEdition -eq "Core") {
+      $is32Bit = [int]0
+      if ([Kernel32.NativeMethods]::IsWow64Process($proc.Handle, [ref]$is32Bit)) {
+        if ($is32Bit) {
+          return "(x86)"
+        } else {
+          return "(x64)"
+        }
+      } else {
+        return ""
+      }
     } else {
-      Return ""
+      $proc = Get-Process -Id $id -ErrorAction SilentlyContinue
+      if ($proc) {
+        Return ("(" + $proc.StartInfo.EnvironmentVariables["PROCESSOR_ARCHITECTURE"] + ")")
+      } else {
+        Return ""
+      }
     }
+  } else {
+    return ""
   }
 }
 
@@ -89,6 +112,45 @@ Function Win10Ver {
     return " (21H1 / fe)"  
   } elseif ($build -eq 22000) {
     return " (21H2 / co)"  
+  }
+}
+
+Function ListProcsAndSvcs {
+  $proc = ExecQuery -Namespace "root\cimv2" -Query "select Name, CreationDate, ProcessId, ParentProcessId, SessionId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine, ExecutablePath from Win32_Process"
+  if ($PSVersionTable.psversion.ToString() -ge "3.0") {
+    $StartTime= @{e={$_.CreationDate.ToString("yyyyMMdd HH:mm:ss")};n="Start time"}
+    $Owner = @{N="User";E={(GetOwnerCim($_))}}
+  } else {
+    $StartTime= @{n='StartTime';e={$_.ConvertToDateTime($_.CreationDate)}}
+    $Owner = @{N="User";E={(GetOwnerWmi($_))}}
+  }
+
+  if ($proc) {
+    $proc | Sort-Object Name |
+    Format-Table -AutoSize -property @{e={$_.ProcessId};Label="PID"}, @{e={$_.ParentProcessId};n="Parent"}, Name, @{e={$_.SessionId};n="Session"},
+    @{N="WorkingSet";E={"{0:N0}" -f ($_.WorkingSetSize/1kb)};a="right"},
+    @{e={[DateTime]::FromFileTimeUtc($_.UserModeTime).ToString("HH:mm:ss")};n="UserTime"}, @{e={[DateTime]::FromFileTimeUtc($_.KernelModeTime).ToString("HH:mm:ss")};n="KernelTime"},
+    @{N="Threads";E={$_.ThreadCount}}, @{N="Handles";E={($_.HandleCount)}}, $StartTime, $Owner, CommandLine |
+    Out-String -Width 500 | Out-File -FilePath ($global:resDir + "\processes.txt")
+
+    Write-Log "Retrieving file version of running binaries"
+    $binlist = $proc | Group-Object -Property ExecutablePath
+    foreach ($file in $binlist) {
+      if ($file.Name) {
+        FileVersion -Filepath ($file.name) -Log $true
+      }
+    }
+
+    Write-Log "Collecting services details"
+    $svc = ExecQuery -NameSpace "root\cimv2" -Query "select  ProcessId, DisplayName, StartMode,State, Name, PathName, StartName from Win32_Service"
+
+    if ($svc) {
+      $svc | Sort-Object DisplayName | Format-Table -AutoSize -Property ProcessId, DisplayName, StartMode,State, Name, PathName, StartName |
+      Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\services.txt")
+    }
+    return $true
+  } else {
+    return $false
   }
 }
 

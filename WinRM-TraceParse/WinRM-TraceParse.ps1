@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20211222
+# Version 20211228
 
 param (
   [string]$InputFile,
@@ -521,7 +521,26 @@ while (-not $sr.EndOfStream) {
         }
 
       } elseif ($row.Message -eq "InteractiveEvent") {
+        $row.RetObj = $xmlEvt.Envelope.Body.InteractiveEvent.Name
+        $row.Items = $xmlEvt.Envelope.Body.InteractiveEvent.Value.ChildNodes.Count
         $row.Command = $xmlEvt.Envelope.Body.InteractiveEvent.EventType + " - " + $xmlEvt.Envelope.Body.InteractiveEvent.Description
+        if ($row.Items -gt 0) {
+          $fileCSV = $dirName + "\" + $FileName.Replace("xml", $row.RetObj + ".csv")
+          $ColNames = ""
+          ForEach ($RetCol in $xmlEvt.Envelope.Body.InteractiveEvent.Value.FirstChild.ChildNodes) {
+            $ColNames += ("""" + $RetCol.Name.replace("p1:","") + """,")
+          }
+          $ColNames = $ColNames.Substring(0,$ColNames.Length-1)
+          $ColNames | Out-File -FilePath $fileCSV
+
+          ForEach ($resrow in $xmlEvt.Envelope.Body.InteractiveEvent.Value.ChildNodes) {
+            $rowval = ""
+            ForEach ($colval in $resrow.ChildNodes) {
+              $rowval += ("""" + $colval.'#text' + """,")
+            }
+            $rowval | Out-File -FilePath $fileCSV -Append
+          }
+        } 
 
       } elseif ($row.Message -eq "ApplyConfiguration_INPUT") {
         $row.Message = $row.Message  # We just want to leave $row.Command Null
@@ -782,8 +801,8 @@ foreach ($row in $tbStats.Rows) {
   $tbStats.Rows[$nRow].SpanPkt = $SpanPkt.ToString().Substring(0,8)
   $SpanEvt = New-TimeSpan -Start $row.EvtFirst -End $row.EvtLast
   $tbStats.Rows[$nRow].SpanEvt = $SpanEvt.ToString().Substring(0,8)
-  $tbStats.Rows[$nRow].DelayStart = ("{0:g}” -f (New-TimeSpan -Start $row.EvtFirst -End $row.FirstPacket))
-  $tbStats.Rows[$nRow].DelayEnd = ("{0:g}” -f (New-TimeSpan -Start $row.EvtLast -End $row.LastPacket))
+  $tbStats.Rows[$nRow].DelayStart = ("{0:g}" -f (New-TimeSpan -Start $row.EvtFirst -End $row.FirstPacket))
+  $tbStats.Rows[$nRow].DelayEnd = ("{0:g}" -f (New-TimeSpan -Start $row.EvtLast -End $row.LastPacket))
   $tbStats.Rows[$nRow].EvtSecPkt = [math]::Round($row.Events / $SpanPkt.TotalSeconds)
   $tbStats.Rows[$nRow].EvtSecSrv = [math]::Round($row.Events / $SpanEvt.TotalSeconds)
   $tbStats.Rows[$nRow].AvgmsPkt = [math]::Round($row.PktPrc / $row.Pckts)
