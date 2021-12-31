@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "WinRM-Collect (20211227)"
+$version = "WinRM-Collect (20211231)"
 $DiagVersion = "WinRM-Diag (20211122)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -452,73 +452,22 @@ if (Test-Path HKLM:\SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\Al
   Write-Log "The registry key HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowFreshCredentials is not present"
 }
 
-Write-Log "Exporting System log"
-$cmd = "wevtutil epl System """+ $global:resDir + "\" + $env:computername + "-System.evtx""" + $RdrOut + $RdrErr
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "System"
-
-Write-Log "Exporting Application log"
-$cmd = "wevtutil epl Application """+ $global:resDir + "\" + $env:computername + "-Application.evtx""" + $RdrOut + $RdrErr
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "Application"
-
-Write-Log "Exporting CAPI2 log"
-$cmd = "wevtutil epl Microsoft-Windows-CAPI2/Operational """+ $global:resDir + "\" + $env:computername + "-capi2.evtx""" + $RdrOut + $RdrErr
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "capi2"
-
-Write-Log "Exporting Windows Remote Management log"
-$cmd = "wevtutil epl Microsoft-Windows-WinRM/Operational """+ $global:resDir + "\" + $env:computername + "-WindowsRemoteManagement.evtx""" + $RdrOut + $RdrErr
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "WindowsRemoteManagement"
-
-Write-Log "Exporting EventCollector log"
-$cmd = "wevtutil epl Microsoft-Windows-EventCollector/Operational """+ $global:resDir + "\" + $env:computername + "-EventCollector.evtx""" + $RdrOut + $RdrErr
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "EventCollector"
-
-Write-Log "Exporting Event-ForwardingPlugin log"
-$cmd = "wevtutil epl Microsoft-Windows-Forwarding/Operational """+ $global:resDir + "\" + $env:computername + "-Event-ForwardingPlugin.evtx""" + $RdrOut + $RdrErr
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "Event-ForwardingPlugin"
-
-Write-Log "Exporting PowerShell/Operational log"
-$cmd = "wevtutil epl Microsoft-Windows-PowerShell/Operational """+ $global:resDir + "\" + $env:computername + "-PowerShell-Operational.evtx""" + $RdrOut + $RdrErr
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "PowerShell-Operational"
-
-Write-Log "Exporting Windows PowerShell log"
-$cmd = "wevtutil epl ""Windows PowerShell"" """+ $global:resDir + "\" + $env:computername + "-WindowsPowerShell.evtx""" + $RdrOut + $RdrErr
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "WindowsPowerShell"
-
-Write-Log "Exporting Windows Group Policy log"
-$cmd = "wevtutil epl ""Microsoft-Windows-GroupPolicy/Operational"" """+ $global:resDir + "\" + $env:computername + "-GroupPolicy.evtx""" + $RdrOut + $RdrErr
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "GroupPolicy"
-
-Write-Log "Exporting Kernel-EventTracing log"
-$cmd = "wevtutil epl ""Microsoft-Windows-Kernel-EventTracing/Admin"" """+ $global:resDir + "\" + $env:computername + "-EventTracing.evtx""" + $RdrOut + $RdrErr
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "EventTracing"
-
-if (Get-WinEvent -ListLog Microsoft-ServerManagementExperience -ErrorAction SilentlyContinue) {
-  Write-Log "Exporting Windows Admin Center log"
-  $cmd = "wevtutil epl Microsoft-ServerManagementExperience """+ $global:resDir + "\" + $env:computername + "-WindowsAdminCenter.evtx""" + $RdrOut + $RdrErr
-  Write-Log $cmd
-  Invoke-Expression $cmd
-  ArchiveLog "WindowsAdminCenter"
-}
+Export-EventLog "System"
+Export-EventLog "Application"
+Export-EventLog "Microsoft-Windows-CAPI2/Operational"
+Export-EventLog "Microsoft-Windows-WinRM/Operational"
+Export-EventLog "Microsoft-Windows-EventCollector/Operational"
+Export-EventLog "Microsoft-Windows-Forwarding/Operational"
+Export-EventLog "Microsoft-Windows-PowerShell/Operational"
+Export-EventLog "Windows PowerShell"
+Export-EventLog "Microsoft-Windows-GroupPolicy/Operational"
+Export-EventLog "Microsoft-Windows-Kernel-EventTracing/Admin"
+Export-EventLog "Microsoft-ServerManagementExperience"
+Export-EventLog "Microsoft-Windows-ServerManager-ConfigureSMRemoting/Operational"
+Export-EventLog "Microsoft-Windows-ServerManager-DeploymentProvider/Operational"
+Export-EventLog "Microsoft-Windows-ServerManager-MgmtProvider/Operational"
+Export-EventLog "Microsoft-Windows-ServerManager-MultiMachine/Operational"
+Export-EventLog "Microsoft-Windows-FileServices-ServerManager-EventProvider/Operational"
 
 EvtLogDetails "Application"
 EvtLogDetails "System"
@@ -534,31 +483,6 @@ Get-AutologgerConfig -Name EventLog-Application -ErrorAction SilentlyContinue | 
 if ($OSVer -gt 6.1 ) {
   Write-Log "Copying ServerManager configuration"
   copy-item $env:APPDATA\Microsoft\Windows\ServerManager\ServerList.xml $global:resDir\ServerList.xml -ErrorAction Continue 2>>$global:errfile
-
-  Write-Log "Exporting Microsoft-Windows-ServerManager-ConfigureSMRemoting/Operational log"
-  $cmd = "wevtutil epl Microsoft-Windows-ServerManager-ConfigureSMRemoting/Operational """+ $global:resDir + "\" + $env:computername + "-ServerManager-ConfigureSMRemoting.evtx""" + $RdrOut + $RdrErr
-  Write-Log $cmd
-  Invoke-Expression $cmd
-
-  Write-Log "Exporting Microsoft-Windows-ServerManager-DeploymentProvider/Operational log"
-  $cmd = "wevtutil epl Microsoft-Windows-ServerManager-DeploymentProvider/Operational """+ $global:resDir + "\" + $env:computername + "-ServerManager-DeploymentProvider.evtx""" + $RdrOut + $RdrErr
-  Write-Log $cmd
-  Invoke-Expression $cmd
-
-  Write-Log "Exporting Microsoft-Windows-ServerManager-MgmtProvider/Operational log"
-  $cmd = "wevtutil epl Microsoft-Windows-ServerManager-MgmtProvider/Operational """+ $global:resDir + "\" + $env:computername + "-ServerManager-MgmtProvider.evtx""" + $RdrOut + $RdrErr
-  Write-Log $cmd
-  Invoke-Expression $cmd
-
-  Write-Log "Exporting Microsoft-Windows-ServerManager-MultiMachine/Operational log"
-  $cmd = "wevtutil epl Microsoft-Windows-ServerManager-MultiMachine/Operational """+ $global:resDir + "\" + $env:computername + "-ServerManager-MultiMachine.evtx""" + $RdrOut + $RdrErr
-  Write-Log $cmd
-  Invoke-Expression $cmd
-
-  Write-Log "Exporting Microsoft-Windows-FileServices-ServerManager-EventProvider/Operational log"
-  $cmd = "wevtutil epl Microsoft-Windows-FileServices-ServerManager-EventProvider/Operational """+ $global:resDir + "\" + $env:computername + "-ServerManager-EventProvider.evtx""" + $RdrOut + $RdrErr
-  Write-Log $cmd
-  Invoke-Expression $cmd
   
   Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\ServerManager\ServicingStorage\ServerComponentCache"
   $cmd = "reg export ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\ServerManager\ServicingStorage\ServerComponentCache"" """ + $global:resDir + "\ServerComponentCache.reg.txt"" /y " + $RdrOut + $RdrErr

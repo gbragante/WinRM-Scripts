@@ -1,4 +1,4 @@
-# Collect-Commons 20211224
+# Collect-Commons 20211231
 
 Function Write-Log {
   param( [string] $msg )
@@ -173,7 +173,7 @@ Function CollectSystemInfoNoWMI {
   "Total number of handles".PadRight($pad) + " : " + ("{0:N0}" -f ($proc | Measure-Object -Property Handles -Sum).Sum)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
   "Operating System".PadRight($pad) + " : " + [System.Environment]::OSVersion.VersionString | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
   "Build Number".PadRight($pad) + " : " + (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").ubr + (Win10Ver $OS.BuildNumber)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
-  "Time zone".PadRight($pad) + " : " + (Get-TimeZone).DisplayName | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Time zone".PadRight($pad) + " : " + [System.TimeZoneInfo]::Local.DisplayName | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
   "Local time".PadRight($pad) + " : " + (Get-Date) | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
   "NetBIOS Domain name".PadRight($pad) + " : " + (GetNBDomainName) | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
 
@@ -700,11 +700,12 @@ function Export-EventLog {
   param (
     [string]$LogName
   )
-  
-  $cmd = "wevtutil epl ${LogName} """ + $resDir + "\" + $env:computername + "-$($LogName -replace '/','_').evtx""" + $global:RdrOut + $global:RdrErr
-  Write-Log $cmd
-  Invoke-Expression $cmd
-  ArchiveLog ($LogName -replace '/', '_')
+  if (Get-WinEvent -ListLog $LogName -ErrorAction SilentlyContinue) {
+    $cmd = "wevtutil epl ""${LogName}"" """ + $resDir + "\" + $env:computername + "-$($LogName -replace '/','_').evtx""" + $global:RdrOut + $global:RdrErr
+    Write-Log $cmd
+    Invoke-Expression $cmd
+    ArchiveLog ($LogName -replace '/', '_')
+  }
 } 
 
 function Invoke-CustomCommand {
