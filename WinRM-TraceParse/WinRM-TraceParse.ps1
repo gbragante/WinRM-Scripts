@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20211228
+# Version 20220228
 
 param (
   [string]$InputFile,
@@ -119,6 +119,7 @@ $col = New-Object system.Data.DataColumn RetObj,([string]); $tbEvt.Columns.Add($
 $col = New-Object system.Data.DataColumn Bookmarks,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Items,([int32]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Dates,([string]); $tbEvt.Columns.Add($col)
+#$col = New-Object system.Data.DataColumn ClientIP,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Computer,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn OperationTimeout,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn EnumerationContext,([string]); $tbEvt.Columns.Add($col)
@@ -651,8 +652,21 @@ while (-not $sr.EndOfStream) {
       $row.OperationTimeout = $xmlEvt.Envelope.Header.OperationTimeout
     }
 
+    # 20220228 Tried to correlate the information in tbHTTP but it does not seem to work
+    # if ($row.Type -eq "LR") {
+    #   $aIP = $tbHTTP.select("AppPID = " + $row.PID + " and AppTID = " + $row.TID + "and URI = '" + $To + "'", "Time Desc")
+    #   if ($aIP) {
+    #     $ClientIP = $aIP[0].RemoteAddress
+    #   } else {
+    #     $ClientIP = $aIP[0].RemoteAddress
+    #   }
+    # } else {
+    #   $ClientIP = $aIP[0].RemoteAddress
+    # }
+
     $row.To = $To
     $row.Computer = $computer
+    #$row.ClientIP = $ClientIP
     $row.MessageID = $msgId
     $row.RelatesTo = $relTo
     $row.SessionID = $SessId
@@ -662,6 +676,7 @@ while (-not $sr.EndOfStream) {
     $row.OperationID = $OpId
     $row.FileName = $FileName
     $tbEvt.Rows.Add($row)
+
     Write-Host $lines $thread $time $To $row.Action
 
     }
