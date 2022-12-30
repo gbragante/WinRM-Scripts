@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "WinRM-Collect (20211231)"
+$version = "WinRM-Collect (20221230)"
 $DiagVersion = "WinRM-Diag (20211122)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -460,6 +460,7 @@ Export-EventLog "Microsoft-Windows-EventCollector/Operational"
 Export-EventLog "Microsoft-Windows-Forwarding/Operational"
 Export-EventLog "Microsoft-Windows-PowerShell/Operational"
 Export-EventLog "Windows PowerShell"
+Export-EventLog "PowerShellCore/Operational"
 Export-EventLog "Microsoft-Windows-GroupPolicy/Operational"
 Export-EventLog "Microsoft-Windows-Kernel-EventTracing/Admin"
 Export-EventLog "Microsoft-ServerManagementExperience"
