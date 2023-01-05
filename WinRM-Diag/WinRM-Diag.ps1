@@ -1,5 +1,5 @@
 param( [string]$Path, [switch]$AcceptEula )
-$DiagVersion = "WinRM-Diag (20211122)"
+$DiagVersion = "WinRM-Diag (20230105)"
 # by Gianni Bragante gbrag@microsoft.com
 
 Function FindSep {
@@ -345,47 +345,54 @@ $Subscriptions = Get-ChildItem -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVer
 foreach ($sub in $Subscriptions) {
   Write-Diag ("[INFO] Found subscription " + $sub.PSChildname)
   $SubProp = ($sub | Get-ItemProperty)
-  Write-Diag ("[INFO]   SubscriptionType = " + $SubProp.SubscriptionType + ", ConfigurationMode = " + $SubProp.ConfigurationMode)
-  Write-Diag ("[INFO]   MaxLatencyTime = " + (GetSubVal $sub.PSChildname "MaxLatencyTime") + ", HeartBeatInterval = " + (GetSubVal $sub.PSChildname "HeartBeatInterval"))
+  Write-Diag ("[INFO]    SubscriptionType = " + $SubProp.SubscriptionType + ", ConfigurationMode = " + $SubProp.ConfigurationMode)
+  Write-Diag ("[INFO]    MaxLatencyTime = " + (GetSubVal $sub.PSChildname "MaxLatencyTime") + ", HeartBeatInterval = " + (GetSubVal $sub.PSChildname "HeartBeatInterval"))
+  
+  $logFile = (GetSubVal $sub.PSChildname "LogFile")
+  if ($logFile -ne "ForwardedEvents") {
+    Write-Diag ("[WARNING] LogFile = " + $logFile + ", this is a CUSTOM LOG")
+  } else { 
+    Write-Diag ("[INFO]    LogFile = " + $logFile)
+  }
 
   if ($SubProp.AllowedSourceDomainComputers) {
-    Write-Diag "[INFO]   AllowedSourceDomainComputers"
+    Write-Diag "[INFO]    AllowedSourceDomainComputers"
     $ACL = (FindSep -FindIn $SubProp.AllowedSourceDomainComputers -Left ":P" -Right ")S:").replace(")(", ",").Split(",")
     foreach ($ACE in $ACL) {
       $SID = FindSep -FindIn $ACE -left ";;;"
       $objSID = New-Object System.Security.Principal.SecurityIdentifier($SID)
       $group = $objSID.Translate( [System.Security.Principal.NTAccount]).Value
-      Write-Diag "[INFO]      $group ($SID)"
+      Write-Diag "[INFO]       $group ($SID)"
     }
   }
 
   if ($SubProp.Locale) {
     if ($SubProp.Locale -eq "en-US") {
-      Write-Diag "[INFO]   The subscription's locale is set to en-US"
+      Write-Diag "[INFO]    The subscription's locale is set to en-US"
     } else {
       Write-Diag ("[WARNING] The subscription's locale is set to " + $SubProp.Locale)
     }
   } else {
-   Write-Diag "[INFO]   The subscription's locale is not set, the default locale will be used."    
+   Write-Diag "[INFO]    The subscription's locale is not set, the default locale will be used."    
   }
 
   if ($SubProp.AllowedSubjects) {
     $subWG = $true
-    Write-Diag "[INFO]   Listed non-domain computers:"
+    Write-Diag "[INFO]    Listed non-domain computers:"
     $list = $SubProp.AllowedSubjects -split ","
     foreach ($item in $list) {
-      Write-Diag ("[INFO]   " + $item)
+      Write-Diag ("[INFO]    " + $item)
     }
   } else {
-    Write-Diag "[INFO]   No non-domain computers listed, that's ok if this is not a collector in workgroup environment"
+    Write-Diag "[INFO]    No non-domain computers listed, that's ok if this is not a collector in workgroup environment"
   }
 
   if ($SubProp.AllowedIssuerCAs) {
     $subWG = $true
-    Write-Diag "[INFO]   Listed Issuer CAs:"
+    Write-Diag "[INFO]    Listed Issuer CAs:"
     $list = $SubProp.AllowedIssuerCAs -split ","
     foreach ($item in $list) {
-      Write-Diag ("[INFO]   " + $item)
+      Write-Diag ("[INFO]    " + $item)
       ChkCert -cert $item -store "(Store = 'CA' or Store = 'Root')" -descr "Issuer CA"
     }
   } else {
