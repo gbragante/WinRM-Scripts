@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "WinRM-Collect (20221230)"
+$version = "WinRM-Collect (20230111)"
 $DiagVersion = "WinRM-Diag (20211122)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -258,6 +258,7 @@ if ($proc) {
 }
 
 FileVersion -Filepath ($env:windir + "\system32\wsmsvc.dll") -Log $true
+FileVersion -Filepath ($env:windir + "\system32\pwrshplugin.dll") -Log $true
 
 if (Get-ChildItem -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector\Subscriptions) {
   Write-Log "Retrieving subscriptions configuration"
@@ -290,6 +291,11 @@ Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
 Write-Log "Listing members of WinRMRemoteWMIUsers__ group"
 $cmd = "net localgroup ""WinRMRemoteWMIUsers__"" >>""" + $global:resDir + "\Groups.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
+
+Write-Log "Listing members of Windows Admin Center CredSSP Administrators group"
+$cmd = "net localgroup ""Windows Admin Center CredSSP Administrators"" >>""" + $global:resDir + "\Groups.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
