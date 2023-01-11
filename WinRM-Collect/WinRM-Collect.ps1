@@ -302,6 +302,11 @@ Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 (" ") | Out-File -FilePath ($global:resDir + "\Groups.txt") -Append
 ($group + " = " + $strSID) | Out-File -FilePath ($global:resDir + "\Groups.txt") -Append
 
+Write-Log "Getting the output of WHOAMI /all"
+$cmd = "WHOAMI /all >>""" + $global:resDir + "\WHOAMI.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
+
 Write-Log "Get-Culture output"
 "Get-Culture" | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
 Get-Culture | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
