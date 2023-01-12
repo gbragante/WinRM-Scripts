@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "WinRM-Collect (20230111)"
+$version = "WinRM-Collect (20230112)"
 $DiagVersion = "WinRM-Diag (20230105)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -10,6 +10,37 @@ Function Write-Diag {
   $msg = (get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " " + $msg
   Write-Host $msg
   $msg | Out-File -FilePath $diagfile -Append
+}
+
+Function GetPlugins{
+  # This function is a contribution from Gaëtan Rabier
+  param(
+    [string] $WinRMPluginPath = "WSMan:\localhost\plugin"
+  )
+  Write-Log ("Parsing plugins from path " + $WinRMPluginPath)
+  $WinRMPlugins = Get-ChildItem $WinRMPluginPath
+
+  foreach ($Plugin in $WinRMPlugins) {
+    $PluginName = $Plugin.Name
+    $PluginURIs = (Get-ChildItem $WinRMPluginPath\$PluginName\Resources).Name
+    $PluginDLL = (Get-ChildItem $WinRMPluginPath\$PluginName\Filename).Value
+    $PluginName  | Out-File -FilePath ($resDir + "\Plugins.txt") -Append
+    ("  DLL: " + $PluginDLL) | Out-File -FilePath ($resDir + "\Plugins.txt") -Append
+    foreach ($PluginURI in $PluginURIs) {
+      $Capability = (Get-ChildItem $WinRMPluginPath\$PluginName\Resources\$PluginURI\Capability).Value
+      $SecurityContainerName = (Get-ChildItem $WinRMPluginPath\$PluginName\Resources\$PluginURI\Security).Name
+      $SecurityContainer = gci $WinRMPluginPath\$PluginName\Resources\$PluginURI\Security\$SecurityContainerName
+      $SecuritySddl = ($SecurityContainer |? {$_.Name -eq 'Sddl'}).Value
+      $SecuritySddlConverted = (ConvertFrom-SddlString $SecuritySddl).DiscretionaryAcl
+      $ResourceURI = ($SecurityContainer |? {$_.Name -eq 'ParentResourceUri'}).Value
+
+      ("  URI: " + $ResourceURI) | Out-File -FilePath ($resDir + "\Plugins.txt") -Append
+      ("    Capabilities: " + $Capability) | Out-File -FilePath ($resDir + "\Plugins.txt") -Append
+      ("    Security descriptor : " + $SecuritySddlConverted) | Out-File -FilePath ($resDir + "\Plugins.txt") -Append
+      " " | Out-File -FilePath ($resDir + "\Plugins.txt") -Append
+      Remove-Variable SecurityContainerName,SecurityContainer,ResourceURI,Capability,SecuritySddlConverted,SecuritySddl
+    }
+  }
 }
 
 Function EvtLogDetails {
@@ -200,7 +231,10 @@ if (!$config) {
   Write-Log ("Cannot connect to localhost, trying with FQDN " + $fqdn)
   Connect-WSMan -ComputerName $fqdn -ErrorAction Continue 2>>$global:errfile
   $config = Get-ChildItem WSMan:\$fqdn -Recurse -ErrorAction Continue 2>>$global:errfile
+  GetPlugins -WinRMPluginPath (WSMan:\$fqdn\Plugin)
   Disconnect-WSMan -ComputerName $fqdn -ErrorAction Continue 2>>$global:errfile
+} else {
+  GetPlugins
 }
 
 $config | out-string -Width 500 | out-file -FilePath ($global:resDir + "\WinRM-config.txt")
