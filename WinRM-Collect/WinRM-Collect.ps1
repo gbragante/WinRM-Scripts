@@ -13,7 +13,7 @@ Function Write-Diag {
 }
 
 Function GetPlugins{
-  # This function is a contribution from Gaëtan Rabier
+  # This function is a contribution from Gaï¿½tan Rabier
   param(
     [string] $WinRMPluginPath = "WSMan:\localhost\plugin"
   )
@@ -29,7 +29,7 @@ Function GetPlugins{
     foreach ($PluginURI in $PluginURIs) {
       $Capability = (Get-ChildItem $WinRMPluginPath\$PluginName\Resources\$PluginURI\Capability).Value
       $SecurityContainerName = (Get-ChildItem $WinRMPluginPath\$PluginName\Resources\$PluginURI\Security).Name
-      $SecurityContainer = gci $WinRMPluginPath\$PluginName\Resources\$PluginURI\Security\$SecurityContainerName
+      $SecurityContainer = Get-ChildItem $WinRMPluginPath\$PluginName\Resources\$PluginURI\Security\$SecurityContainerName
       $SecuritySddl = ($SecurityContainer |? {$_.Name -eq 'Sddl'}).Value
       $SecuritySddlConverted = (ConvertFrom-SddlString $SecuritySddl).DiscretionaryAcl
       $ResourceURI = ($SecurityContainer |? {$_.Name -eq 'ParentResourceUri'}).Value
@@ -262,7 +262,7 @@ if ($pidWinRM) {
 
 Write-Log "Collecing the dumps of wsmprovhost.exe processes"
 $list = get-process -Name "wsmprovhost" -ErrorAction SilentlyContinue 2>>$global:errfile
-if (($list | measure).count -gt 0) {
+if (($list | Measure-Object).count -gt 0) {
   foreach ($proc in $list)
   {
     Write-Log ("Found wsmprovhost.exe with PID " + $proc.Id)
@@ -407,7 +407,7 @@ if (Test-Path -Path C:\Windows\system32\drivers\etc\lmhosts) {
 
 $dir = $env:windir + "\system32\logfiles\HTTPERR"
 if (Test-Path -path $dir) {
-  $last = Get-ChildItem -path ($dir) | Sort CreationTime -Descending | Select Name -First 1 
+  $last = Get-ChildItem -path ($dir) | Sort-Object CreationTime -Descending | Select Name -First 1 
   Copy-Item ($dir + "\" + $last.name) $global:resDir\httperr.log -ErrorAction Continue 2>>$global:errfile
 }
 
@@ -716,7 +716,7 @@ Write-Diag ("[INFO] " + $DiagVersion)
 Write-Diag "[INFO] Checking HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\Schannel\ClientAuthTrustMode"
 $ClientAuthTrustMode = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\Schannel" | Select-Object -ExpandProperty "ClientAuthTrustMode" -ErrorAction SilentlyContinue)
 
-if ($ClientAuthTrustMode -eq $null -or $ClientAuthTrustMode -eq 0) {
+if ($null -eq $ClientAuthTrustMode -or $ClientAuthTrustMode -eq 0) {
   Write-Diag "[WARNING]   0 Machine Trust (default) - Requires that the client certificate is issued by a certificate in the Trusted Issuers list."  
 } elseif ($ClientAuthTrustMode -eq 1) {
   Write-Diag "[WARNING]   1 Exclusive Root Trust - Requires that a client certificate chains to a root certificate contained in the caller-specified trusted issuer store. The certificate must also be issued by an issuer in the Trusted Issuers list"  
