@@ -1,5 +1,5 @@
 param( [string]$Path, [switch]$AcceptEula )
-$DiagVersion = "WinRM-Diag (20230105)"
+$DiagVersion = "WinRM-Diag (20230207)"
 # by Gianni Bragante gbrag@microsoft.com
 
 Function FindSep {
@@ -644,28 +644,30 @@ if ((Get-CimInstance -ClassName Win32_ComputerSystem).PartOfDomain) {
     }
   }
 
-  Write-Diag "[INFO] Checking the WinRMRemoteWMIUsers__ group"
-  $search = New-Object DirectoryServices.DirectorySearcher([ADSI]"")  # This is a Domain local group, therefore we need to collect to a non-global catalog
-  $search.filter = "(samaccountname=WinRMRemoteWMIUsers__)"
-  $results = $search.Findall()
-  if ($results.count -gt 0) {
-    Write-Diag ("[INFO] Found " + $results.Properties.distinguishedname)
-    if ($results.Properties.grouptype -eq  -2147483644) {
-      Write-Diag "[INFO] WinRMRemoteWMIUsers__ is a Domain local group"
-    } elseif ($results.Properties.grouptype -eq -2147483646) {
-      Write-Diag "[WARNING] WinRMRemoteWMIUsers__ is a Global group"
-    } elseif ($results.Properties.grouptype -eq -2147483640) {
-      Write-Diag "[WARNING] WinRMRemoteWMIUsers__ is a Universal group"
-    }
-    if (Get-CimInstance -Query "select * from Win32_Group where Name = 'WinRMRemoteWMIUsers__' and Domain = '$env:computername'") {
-      Write-Diag "[INFO] The group WinRMRemoteWMIUsers__ is also present as machine local group"
-    }
-  } else {
-    Write-Diag "[ERROR] The WinRMRemoteWMIUsers__ was not found in the domain" 
-    if (Get-CimInstance -Query "select * from Win32_Group where Name = 'WinRMRemoteWMIUsers__' and Domain = '$env:computername'") {
-      Write-Diag "[INFO] The group WinRMRemoteWMIUsers__ is present as machine local group"
+  if ($OSVer -le 6.3) {
+    Write-Diag "[INFO] Checking the WinRMRemoteWMIUsers__ group"
+    $search = New-Object DirectoryServices.DirectorySearcher([ADSI]"")  # This is a Domain local group, therefore we need to collect to a non-global catalog
+    $search.filter = "(samaccountname=WinRMRemoteWMIUsers__)"
+    $results = $search.Findall()
+    if ($results.count -gt 0) {
+      Write-Diag ("[INFO] Found " + $results.Properties.distinguishedname)
+      if ($results.Properties.grouptype -eq  -2147483644) {
+        Write-Diag "[INFO] WinRMRemoteWMIUsers__ is a Domain local group"
+      } elseif ($results.Properties.grouptype -eq -2147483646) {
+        Write-Diag "[WARNING] WinRMRemoteWMIUsers__ is a Global group"
+      } elseif ($results.Properties.grouptype -eq -2147483640) {
+        Write-Diag "[WARNING] WinRMRemoteWMIUsers__ is a Universal group"
+      }
+      if (Get-CimInstance -Query "select * from Win32_Group where Name = 'WinRMRemoteWMIUsers__' and Domain = '$env:computername'") {
+        Write-Diag "[INFO] The group WinRMRemoteWMIUsers__ is also present as machine local group"
+      }
     } else {
-      Write-Diag "[ERROR] The group WinRMRemoteWMIUsers__ is not even present as machine local group"
+      Write-Diag "[WARNING] The WinRMRemoteWMIUsers__ was not found in the domain" 
+      if (Get-CimInstance -Query "select * from Win32_Group where Name = 'WinRMRemoteWMIUsers__' and Domain = '$env:computername'") {
+        Write-Diag "[INFO] The group WinRMRemoteWMIUsers__ is present as machine local group"
+      } else {
+        Write-Diag "[ERROR] The group WinRMRemoteWMIUsers__ is not even present as machine local group"
+      }
     }
   }
   if ((Get-ChildItem WSMan:\localhost\Service\Auth\Kerberos).value -eq "true") {
