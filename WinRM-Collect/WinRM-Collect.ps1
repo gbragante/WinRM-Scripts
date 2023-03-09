@@ -1,6 +1,19 @@
-param( [string]$DataPath, [switch]$AcceptEula )
+param( [string]$DataPath, `
+       [switch]$AcceptEula, `
+       [switch]$Trace, `
+       [switch]$Activity, `
+       [switch]$Fwd, `
+       [switch]$FwdCli, `
+       [switch]$RemShell, `
+       [switch]$HTTP, `
+       [switch]$CAPI, `
+       [switch]$Kerberos, `
+       [switch]$NTLM, `
+       [switch]$Schannel, `
+       [switch]$EventLog `
+)
 
-$version = "WinRM-Collect (20230207)"
+$version = "WinRM-Collect (20230309)"
 $DiagVersion = "WinRM-Diag (20230207)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -12,6 +25,62 @@ Function Write-Diag {
   $msg | Out-File -FilePath $diagfile -Append
 }
 
+Function WinRMTraceCapture {
+  Invoke-CustomCommand ("logman create trace 'WinRM-Trace' -ow -o '" + $global:resDir + "\WinRM-Trace-$env:COMPUTERNAME.etl" + "' -p 'Microsoft-Windows-WinRM' 0xffffffffffffffff 0xff -nb 16 16 -bs 1024 -mode Circular -f bincirc -max 4096 -ets")  
+  
+  Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{04C6E16D-B99F-4A3A-9B3E-B8325BBC781E}' 0xffffffffffffffff 0xff -ets" # Windows Remote Management Trace
+
+  if (-not $Activity -or $Fwd) {
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{699E309C-E782-4400-98C8-E21D162D7B7B}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-Forwarding
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{B977CF02-76F6-DF84-CC1A-6A4B232322B6}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-EventCollector
+  }
+
+  if (-not $Activity -or $RemShell) {
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{F1CAB2C0-8BEB-4FA2-90E1-8F17E0ACDD5D}' 0xffffffffffffffff 0xff -ets" # RemoteShellClient
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{03992646-3DFE-4477-80E3-85936ACE7ABB}' 0xffffffffffffffff 0xff -ets" # RemoteShell
+  }
+  if (-not $Activity -or $HTTP) {
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{72B18662-744E-4A68-B816-8D562289A850}' 0xffffffffffffffff 0xff -ets" # Windows HTTP Services
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{7D44233D-3055-4B9C-BA64-0D47CA40A232}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-WinHttp
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{B3A7698A-0C45-44DA-B73D-E181C9B5C8E6}' 0xffffffffffffffff 0xff -ets" # WinHttp
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{DD5EF90A-6398-47A4-AD34-4DCECDEF795F}' 0xffffffffffffffff 0xff -ets" # HTTP Service Trace
+  }
+  if (-not $Activity -or $CAPI) {
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{5BBCA4A8-B209-48DC-A8C7-B23D3E5216FB}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-CAPI2
+  }
+  if (-not $Activity -or $Kerberos) {
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{6B510852-3583-4E2D-AFFE-A67F9F223438}' 0xffffffffffffffff 0xff -ets" # Kerberos Authentication
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{BBA3ADD2-C229-4CDB-AE2B-57EB6966B0C4}' 0xffffffffffffffff 0xff -ets" # Kerberos Client
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{98E6CFCB-EE0A-41E0-A57B-622D4E1B30B1}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-Security-Kerberos
+  }
+  if (-not $Activity -or $CredSSP) {
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{6165F3E2-AE38-45D4-9B23-6B4818758BD9}' 0xffffffffffffffff 0xff -ets" # TSPkg
+  }
+  if (-not $Activity -or $NTLM) {
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{AC43300D-5FCC-4800-8E99-1BD3F85F0320}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-NTLM
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{C92CF544-91B3-4DC0-8E11-C580339A0BF8}' 0xffffffffffffffff 0xff -ets" # NTLM Security Protocol
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{5BBB6C18-AA45-49B1-A15F-085F7ED0AA90}' 0xffffffffffffffff 0xff -ets" # NTLM Authentication
+  }
+  if (-not $Activity -or $Schannel) {
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{1F678132-5938-4686-9FDC-C8FF68F15C85}' 0xffffffffffffffff 0xff -ets" # Schannel
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{37D2C3CD-C5D4-4587-8531-4696C44244C8}' 0xffffffffffffffff 0xff -ets" # SchannelWppGuid
+  }
+
+  if ($FwdCli) {
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{9D11915C-C654-4D73-A6D6-591570E011A0}' 0xffffffffffffffff 0xff -ets" # EvtFwdrWpp
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{6FCDF39A-EF67-483D-A661-76D715C6B008}' 0xffffffffffffffff 0xff -ets" # ForwarderTrace
+  }
+  if ($FwdCli -or $EventLog) {
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{FC65DDD8-D6EF-4962-83D5-6E5CFE9CE148}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-Eventlog
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{B0CA1D82-539D-4FB0-944B-1620C6E86231}' 0xffffffffffffffff 0xff -ets" # EventlogTrace
+  }
+
+  Write-Log "Trace capture started"
+  read-host "Press ENTER to stop the capture"
+  Invoke-CustomCommand "logman stop 'WinRM-Trace' -ets"
+
+  Invoke-CustomCommand "tasklist /svc" -DestinationFile "tasklist-$env:COMPUTERNAME.txt"
+}
 Function GetPlugins{
   # This function is a contribution from Ga�tan Rabier
   param(
@@ -176,7 +245,7 @@ if ($DataPath) {
 } else {
 
   $global:resDir = $global:Root + "\" + $resName
-}if ($DataPath) {
+} if ($DataPath) {
   if (-not (Test-Path $DataPath)) {
     Write-Host "The folder $DataPath does not exist"
     exit
@@ -193,6 +262,29 @@ $global:errfile = $global:resDir + "\script-errors.txt"
 
 Import-Module ($global:Root + "\Collect-Commons.psm1") -Force -DisableNameChecking
 
+if (-not $Trace -and -not $Logs) {
+  Write-Host "WinRM-Collect: a data collection tools for WinRM troubleshooting"
+  Write-Host ""
+  Write-Host "Usage:"
+  Write-Host "WinRM-Collect -Logs"
+  Write-Host "  Collects dumps, logs, registry keys, command outputs"
+  Write-Host ""
+  Write-Host "WinRM-Collect -Trace [[-Activity][-Storage][-Cluster][-DCOM][-RPC][-MDM][-RDMS][-RDSPUB][-Network][-Kernel]] [-FwdCli]"
+  Write-Host "  Collects live trace"
+  Write-Host ""
+  Write-Host "WMI-Collect -Logs -Trace  [[-Activity][-Storage][-Cluster][-DCOM][-RPC][-MDM][-RDMS][-RDSPUB][-Network][-Kernel]] [-FwdCli]"
+  Write-Host "  Collects live trace then -Logs data"
+  Write-Host ""
+  Write-Host "Parameters for -Trace :"
+  Write-Host "  -Activity : Only trace WinRM basic log, less detailed and less noisy"
+  Write-Host "    -Storage : Storage providers"
+  Write-Host "    -Cluster : Cluster providers"
+  Write-Host ""
+  Write-Host "  -Network : Network capture"
+  Write-Host "  -Kernel : Kernel Trace for process start and stop"
+  Write-Host ""
+  exit
+}
 $RdrOut =  " >>""" + $global:outfile + """"
 $RdrErr =  " 2>>""" + $global:errfile + """"
 $fqdn = [System.Net.Dns]::GetHostByName(($env:computerName)).HostName
