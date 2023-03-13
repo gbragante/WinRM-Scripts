@@ -11,7 +11,10 @@ param( [string]$DataPath, `
        [switch]$Kerberos, `
        [switch]$NTLM, `
        [switch]$Schannel, `
-       [switch]$EventLog `
+       [switch]$EventLog, `
+       [switch]$Network, `
+       [switch]$PerfMon, `
+       [switch]$Kernel 
 )
 
 $version = "WinRM-Collect (20230313)"
@@ -75,10 +78,31 @@ Function WinRMTraceCapture {
     Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{FC65DDD8-D6EF-4962-83D5-6E5CFE9CE148}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-Eventlog
     Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{B0CA1D82-539D-4FB0-944B-1620C6E86231}' 0xffffffffffffffff 0xff -ets" # EventlogTrace
   }
+  if ($Network) {
+    Invoke-CustomCommand ("netsh trace start capture=yes scenario=netconnection maxsize=2048 report=disabled tracefile='" + $TracesDir + "NETCAP-" + $env:COMPUTERNAME + ".etl'")
+  }  
+  if ($Kernel) {
+    Invoke-CustomCommand ("logman create trace 'NT Kernel Logger' -ow -o '" + $TracesDir + "\WinRM-Trace-kernel-$env:COMPUTERNAME.etl" + "' -p '{9E814AAD-3204-11D2-9A82-006008A86939}' 0x1 0xff -nb 16 16 -bs 1024 -mode Circular -f bincirc -max 512 -ets")
+  }
+  if ($PerfMon) {
+    Invoke-CustomCommand ("Logman create counter 'WinRM-Trace-PerfMon' -f bincirc  -max 2048 -c '\Process(*)\*' '\Processor(*)\*' '\PhysicalDisk(*)\*' '\Event Tracing for Windows Session(EventLog-*)\Events Lost' '\Event Tracing for Windows Session(EventLog-*)\Events Logged per sec' '\HTTP Service Request Queues(*)\*' -si 00:00:01 -o '" + $TracesDir + "WinRM-trace-$env:COMPUTERNAME.blg'")
+    Invoke-CustomCommand ("logman start 'WinRM-Trace-PerfMon'")
+  }
 
   Write-Log "Trace capture started"
   read-host "Press ENTER to stop the capture"
   Invoke-CustomCommand "logman stop 'WinRM-Trace' -ets"
+  if ($Network) {
+    Invoke-CustomCommand "netsh trace stop"
+  }  
+  if ($Kernel) {
+    Invoke-CustomCommand "logman stop 'NT Kernel Logger' -ets"
+  }
+  if ($PerfMon) {
+    Invoke-CustomCommand ("logman stop 'WinRM-Trace-PerfMon'")
+    Invoke-CustomCommand ("logman delete 'WinRM-Trace-PerfMon'")
+  }
+
 
   Invoke-CustomCommand "tasklist /svc" -DestinationFile ("Traces\tasklist-$env:COMPUTERNAME.txt")
 }
@@ -100,7 +124,7 @@ Function GetPlugins{
       $Capability = (Get-ChildItem $WinRMPluginPath\$PluginName\Resources\$PluginURI\Capability).Value
       $SecurityContainerName = (Get-ChildItem $WinRMPluginPath\$PluginName\Resources\$PluginURI\Security).Name
       $SecurityContainer = Get-ChildItem $WinRMPluginPath\$PluginName\Resources\$PluginURI\Security\$SecurityContainerName
-      $SecuritySddl = ($SecurityContainer |? {$_.Name -eq 'Sddl'}).Value
+      $SecuritySddl = ($SecurityContainer |Where-Object {$_.Name -eq 'Sddl'}).Value
       $SecuritySddlConverted = (ConvertFrom-SddlString $SecuritySddl).DiscretionaryAcl
       $ResourceURI = ($SecurityContainer | Where-Object {$_.Name -eq 'ParentResourceUri'}).Value
 
@@ -270,27 +294,28 @@ if (-not $Trace -and -not $Logs) {
   Write-Host "WinRM-Collect -Logs"
   Write-Host "  Collects dumps, logs, registry keys, command outputs"
   Write-Host ""
-  Write-Host "WinRM-Collect -Trace [[-Activity][-Fwd][-RemShell][-HTTP][-CAPI][-Kerberos][-CredSSP][-NTLM][-Schannel]] [-FwdCli][-EventLog][-Network][-Kernel]"
+  Write-Host "WinRM-Collect -Trace [[-Activity][-Fwd][-RemShell][-HTTP][-CAPI][-Kerberos][-CredSSP][-NTLM][-Schannel]] [-FwdCli][-EventLog][-Network][-Kernel][-PerfMon]"
   Write-Host "  Collects live trace"
   Write-Host ""
-  Write-Host "WMI-Collect -Logs -Trace  [[-Activity][-Storage][-Cluster][-DCOM][-RPC][-MDM][-RDMS][-RDSPUB][-Network][-Kernel]] [-FwdCli]"
+  Write-Host "WMI-Collect -Logs -Trace [[-Activity][-Fwd][-RemShell][-HTTP][-CAPI][-Kerberos][-CredSSP][-NTLM][-Schannel]] [-FwdCli][-EventLog][-Network][-Kernel][-PerfMon]"
   Write-Host "  Collects live trace then -Logs data"
   Write-Host ""
   Write-Host "Parameters for -Trace :"
-  Write-Host "  -Activity : Only trace WinRM basic log, less detailed and less noisy"
-  Write-Host "    -Fwd : Event Log Forwarding (enabled by default without -Activity"
-  Write-Host "    -RemShell : Remote Shell (enabled by default without -Activity"
-  Write-Host "    -HTTP : WinHTTP and HTTP.SYS (enabled by default without -Activity"
-  Write-Host "    -CAPI : CAPI (enabled by default without -Activity"
-  Write-Host "    -Kerberos : Kerberos (enabled by default without -Activity"
-  Write-Host "    -CredSSP : CredSSP (enabled by default without -Activity"
-  Write-Host "    -NTLM : NTLM (enabled by default without -Activity"
-  Write-Host "    -Schannel : Schannel (enabled by default without -Activity"
+  Write-Host "  -Activity : Only trace WinRM basic log, less detailed and less noisy)"
+  Write-Host "    -Fwd : Event Log Forwarding (enabled by default without -Activity)"
+  Write-Host "    -RemShell : Remote Shell (enabled by default without -Activity)"
+  Write-Host "    -HTTP : WinHTTP and HTTP.SYS (enabled by default without -Activity)"
+  Write-Host "    -CAPI : CAPI (enabled by default without -Activity)"
+  Write-Host "    -Kerberos : Kerberos (enabled by default without -Activity)"
+  Write-Host "    -CredSSP : CredSSP (enabled by default without -Activity)"
+  Write-Host "    -NTLM : NTLM (enabled by default without -Activity)"
+  Write-Host "    -Schannel : Schannel (enabled by default without -Activity)"
   Write-Host ""
   Write-Host "  -FwdCli : Additional client side treacing for EventLog forwarding"
   Write-Host "  -EventLog : Event Log tracing (included in -FwdCli)"
   Write-Host "  -Network : Network capture"
   Write-Host "  -Kernel : Kernel Trace for process start and stop"
+  Write-Host "  -PerfMon : Performance counters"
   Write-Host ""
   exit
 }
@@ -805,7 +830,7 @@ if (ListProcsAndSvcs) {
   ExecQuery -Namespace "root\cimv2" -Query "select * from Win32_Product" | Sort-Object Name | Format-Table -AutoSize -Property Name, Version, Vendor, InstallDate | Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\products.txt")
 
   Write-Log "Collecting the list of installed hotfixes"
-  Get-HotFix -ErrorAction SilentlyContinue 2>>$global:errfile | Sort-Object -Property InstalledOn | Out-File $global:resDir\hotfixes.txt
+  Get-HotFix -ErrorAction SilentlyContinue 2>>$global:errfile | Sort-Object -Property InstalledOn -ErrorAction Ignore | Out-File $global:resDir\hotfixes.txt
 
   Write-Log "Collecing GPResult output"
   $cmd = "gpresult /h """ + $global:resDir + "\gpresult.html""" + $RdrErr
