@@ -1,6 +1,7 @@
 param( [string]$DataPath, `
        [switch]$AcceptEula, `
        [switch]$Trace, `
+       [switch]$Logs, `
        [switch]$Activity, `
        [switch]$Fwd, `
        [switch]$FwdCli, `
@@ -13,7 +14,7 @@ param( [string]$DataPath, `
        [switch]$EventLog `
 )
 
-$version = "WinRM-Collect (20230309)"
+$version = "WinRM-Collect (20230313)"
 $DiagVersion = "WinRM-Diag (20230207)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -26,7 +27,7 @@ Function Write-Diag {
 }
 
 Function WinRMTraceCapture {
-  Invoke-CustomCommand ("logman create trace 'WinRM-Trace' -ow -o '" + $global:resDir + "\WinRM-Trace-$env:COMPUTERNAME.etl" + "' -p 'Microsoft-Windows-WinRM' 0xffffffffffffffff 0xff -nb 16 16 -bs 1024 -mode Circular -f bincirc -max 4096 -ets")  
+  Invoke-CustomCommand ("logman create trace 'WinRM-Trace' -ow -o '" + $TracesDir + "\WinRM-Trace-$env:COMPUTERNAME.etl" + "' -p 'Microsoft-Windows-WinRM' 0xffffffffffffffff 0xff -nb 16 16 -bs 1024 -mode Circular -f bincirc -max 4096 -ets")  
   
   Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{04C6E16D-B99F-4A3A-9B3E-B8325BBC781E}' 0xffffffffffffffff 0xff -ets" # Windows Remote Management Trace
 
@@ -79,7 +80,7 @@ Function WinRMTraceCapture {
   read-host "Press ENTER to stop the capture"
   Invoke-CustomCommand "logman stop 'WinRM-Trace' -ets"
 
-  Invoke-CustomCommand "tasklist /svc" -DestinationFile "tasklist-$env:COMPUTERNAME.txt"
+  Invoke-CustomCommand "tasklist /svc" -DestinationFile ("Traces\tasklist-$env:COMPUTERNAME.txt")
 }
 Function GetPlugins{
   # This function is a contribution from Ga�tan Rabier
@@ -101,7 +102,7 @@ Function GetPlugins{
       $SecurityContainer = Get-ChildItem $WinRMPluginPath\$PluginName\Resources\$PluginURI\Security\$SecurityContainerName
       $SecuritySddl = ($SecurityContainer |? {$_.Name -eq 'Sddl'}).Value
       $SecuritySddlConverted = (ConvertFrom-SddlString $SecuritySddl).DiscretionaryAcl
-      $ResourceURI = ($SecurityContainer |? {$_.Name -eq 'ParentResourceUri'}).Value
+      $ResourceURI = ($SecurityContainer | Where-Object {$_.Name -eq 'ParentResourceUri'}).Value
 
       ("  URI: " + $ResourceURI) | Out-File -FilePath ($resDir + "\Plugins.txt") -Append
       ("    Capabilities: " + $Capability) | Out-File -FilePath ($resDir + "\Plugins.txt") -Append
@@ -269,7 +270,7 @@ if (-not $Trace -and -not $Logs) {
   Write-Host "WinRM-Collect -Logs"
   Write-Host "  Collects dumps, logs, registry keys, command outputs"
   Write-Host ""
-  Write-Host "WinRM-Collect -Trace [[-Activity][-Storage][-Cluster][-DCOM][-RPC][-MDM][-RDMS][-RDSPUB][-Network][-Kernel]] [-FwdCli]"
+  Write-Host "WinRM-Collect -Trace [[-Activity][-Fwd][-RemShell][-HTTP][-CAPI][-Kerberos][-CredSSP][-NTLM][-Schannel]] [-FwdCli][-EventLog][-Network][-Kernel]"
   Write-Host "  Collects live trace"
   Write-Host ""
   Write-Host "WMI-Collect -Logs -Trace  [[-Activity][-Storage][-Cluster][-DCOM][-RPC][-MDM][-RDMS][-RDSPUB][-Network][-Kernel]] [-FwdCli]"
@@ -277,9 +278,17 @@ if (-not $Trace -and -not $Logs) {
   Write-Host ""
   Write-Host "Parameters for -Trace :"
   Write-Host "  -Activity : Only trace WinRM basic log, less detailed and less noisy"
-  Write-Host "    -Storage : Storage providers"
-  Write-Host "    -Cluster : Cluster providers"
+  Write-Host "    -Fwd : Event Log Forwarding (enabled by default without -Activity"
+  Write-Host "    -RemShell : Remote Shell (enabled by default without -Activity"
+  Write-Host "    -HTTP : WinHTTP and HTTP.SYS (enabled by default without -Activity"
+  Write-Host "    -CAPI : CAPI (enabled by default without -Activity"
+  Write-Host "    -Kerberos : Kerberos (enabled by default without -Activity"
+  Write-Host "    -CredSSP : CredSSP (enabled by default without -Activity"
+  Write-Host "    -NTLM : NTLM (enabled by default without -Activity"
+  Write-Host "    -Schannel : Schannel (enabled by default without -Activity"
   Write-Host ""
+  Write-Host "  -FwdCli : Additional client side treacing for EventLog forwarding"
+  Write-Host "  -EventLog : Event Log tracing (included in -FwdCli)"
   Write-Host "  -Network : Network capture"
   Write-Host "  -Kernel : Kernel Trace for process start and stop"
   Write-Host ""
@@ -306,6 +315,15 @@ if ($AcceptEula) {
    }
  }
 Write-Log "EULA accepted, continuing"
+
+if ($Trace) {
+  $TracesDir = $global:resDir + "\Traces\"
+  New-Item -itemtype directory -path $TracesDir | Out-Null
+  WinRMTraceCapture
+  if (-not $Logs) {
+    exit
+  }
+}
 
 "Logman create counter FwdEvtPerf -o """ + $global:resDir + "\FwdEvtPerf.blg"" -f bin -v mmddhhmm -c ""\Process(*)\*"" ""\Processor(*)\*"" ""\PhysicalDisk(*)\*"" ""\Event Tracing for Windows Session(EventLog-*)\Events Lost"" ""\Event Tracing for Windows Session(EventLog-*)\Events Logged per sec"" ""\HTTP Service Request Queues(*)\*"" -si 00:00:01" | Out-File -FilePath ($global:resDir + "\WEF-Perf.bat") -Append -Encoding ascii
 "Logman start FwdEvtPerf" | Out-File -FilePath ($global:resDir + "\WEF-Perf.bat") -Append -Encoding ascii
