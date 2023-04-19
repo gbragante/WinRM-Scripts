@@ -746,7 +746,7 @@ if ($clientcert.Count -gt 0) {
       if ($value.Name -eq "Issuer") {
         ChkCert -cert $value.Value -descr "mapping" -store "(Store = 'Root' or Store = 'CA')"
       } elseif ($value.Name -eq "UserName") {
-        $usr = Get-CimInstance -ClassName Win32_UserAccount | Where {$_.Name -eq $value.value}
+        $usr = Get-CimInstance -ClassName Win32_UserAccount | Where-Object {$_.Name -eq $value.value}
         if ($usr) {
           if ($usr.Disabled) {
             Write-Diag ("[ERROR]    The local user account " + $value.value + " is disabled")
