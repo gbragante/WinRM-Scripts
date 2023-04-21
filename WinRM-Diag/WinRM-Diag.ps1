@@ -1,5 +1,5 @@
 param( [string]$Path, [switch]$AcceptEula )
-$DiagVersion = "WinRM-Diag (20230207)"
+$DiagVersion = "WinRM-Diag (20230419)"
 # by Gianni Bragante gbrag@microsoft.com
 
 Function FindSep {
@@ -425,6 +425,20 @@ if ($Subscriptions) {
 if ($OSVer -gt 6.1) {
   Write-Diag "[INFO] Retrieving machine's IP addresses"
   $iplist = Get-NetIPAddress
+}
+
+$pol = Get-ItemProperty HKLM:\SOFTWARE\Policies\Microsoft\Windows\WinRM\Service  -Name HttpCompatibilityListener -ErrorAction SilentlyContinue
+if ($pol) {
+  if ($pol.HttpCompatibilityListener -eq 1) {
+    Write-Diag ("[WARNING] HTTP Compatibility listener (port 80) is enabled")
+  }
+}
+
+$pol = Get-ItemProperty HKLM:\SOFTWARE\Policies\Microsoft\Windows\WinRM\Service  -Name HttpsCompatibilityListener -ErrorAction SilentlyContinue
+if ($pol) {
+  if ($pol.HttpsCompatibilityListener -eq 1) {
+    Write-Diag ("[WARNING] HTTPS Compatibility listener (port 443) is enabled")
+  }
 }
 
 Write-Diag "[INFO] Browsing listeners"

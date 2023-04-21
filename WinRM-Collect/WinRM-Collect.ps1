@@ -10,6 +10,7 @@ param( [string]$DataPath, `
        [switch]$CAPI, `
        [switch]$Kerberos, `
        [switch]$NTLM, `
+       [switch]$PKU2U, `
        [switch]$Schannel, `
        [switch]$EventLog, `
        [switch]$Network, `
@@ -17,7 +18,7 @@ param( [string]$DataPath, `
        [switch]$Kernel 
 )
 
-$version = "WinRM-Collect (20230313)"
+$version = "WinRM-Collect (20230421)"
 $DiagVersion = "WinRM-Diag (20230207)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -64,6 +65,12 @@ Function WinRMTraceCapture {
     Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{AC43300D-5FCC-4800-8E99-1BD3F85F0320}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-NTLM
     Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{C92CF544-91B3-4DC0-8E11-C580339A0BF8}' 0xffffffffffffffff 0xff -ets" # NTLM Security Protocol
     Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{5BBB6C18-AA45-49B1-A15F-085F7ED0AA90}' 0xffffffffffffffff 0xff -ets" # NTLM Authentication
+  }
+  if ($PKU2U) {
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{2A6FAF47-5449-4805-89A3-A504F3E221A6}' 0xffffffffffffffff 0xff -ets" # Pku2u Authentication
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{B1108F75-3252-4B66-9239-80FD47E06494}' 0xffffffffffffffff 0xff -ets" # IdentityCommonLib
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{D93FE84A-795E-4608-80EC-CE29A96C8658}' 0xffffffffffffffff 0xff -ets" # IdentityListenerControlGuid
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{82C7D3DF-434D-44FC-A7CC-453A8075144E}' 0xffffffffffffffff 0xff -ets" # IDStore
   }
   if (-not $Activity -or $Schannel) {
     Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{1F678132-5938-4686-9FDC-C8FF68F15C85}' 0xffffffffffffffff 0xff -ets" # Schannel
@@ -392,7 +399,7 @@ Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 Write-Log "Collecting dump of the svchost process hosting the WinRM service"
 $pidWinRM = FindServicePid "WinRM"
 if ($pidWinRM) {
-  CreateProcDump $pidWinRM $global:resDir "scvhost-WinRM"
+  CreateProcDump $pidWinRM $global:resDir "svchost-WinRM"
 }
 
 Write-Log "Collecing the dumps of wsmprovhost.exe processes"
