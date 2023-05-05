@@ -6,7 +6,8 @@ param( [string]$DataPath, `
        [switch]$Fwd, `
        [switch]$FwdCli, `
        [switch]$RemShell, `
-       [switch]$HTTP, `
+       [switch]$HTTPSYS, `
+       [switch]$WinHTTP, `
        [switch]$CAPI, `
        [switch]$Kerberos, `
        [switch]$NTLM, `
@@ -18,7 +19,7 @@ param( [string]$DataPath, `
        [switch]$Kernel 
 )
 
-$version = "WinRM-Collect (20230421)"
+$version = "WinRM-Collect (20230505)"
 $DiagVersion = "WinRM-Diag (20230207)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -44,11 +45,21 @@ Function WinRMTraceCapture {
     Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{F1CAB2C0-8BEB-4FA2-90E1-8F17E0ACDD5D}' 0xffffffffffffffff 0xff -ets" # RemoteShellClient
     Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{03992646-3DFE-4477-80E3-85936ACE7ABB}' 0xffffffffffffffff 0xff -ets" # RemoteShell
   }
-  if (-not $Activity -or $HTTP) {
+  if (-not $Activity -or $HTTPSYS) {
     Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{72B18662-744E-4A68-B816-8D562289A850}' 0xffffffffffffffff 0xff -ets" # Windows HTTP Services
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{DD5EF90A-6398-47A4-AD34-4DCECDEF795F}' 0xffffffffffffffff 0xff -ets" # HTTP Service Trace
+  }
+  if ($HTTPSYS) {
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{20F61733-57F1-4127-9F48-4AB7A9308AE2}' 0xffffffffffffffff 0xff -ets" # HttpSysGuid
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{B1945E15-4933-460F-8103-AA611DDB663A}' 0xffffffffffffffff 0xff -ets" # HttpSysProvider
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{C42A2738-2333-40A5-A32F-6ACC36449DCC}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-HttpLog
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{7B6BC78C-898B-4170-BBF8-1A469EA43FC5}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-HttpEvent
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{F5344219-87A4-4399-B14A-E59CD118ABB8}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-Http-SQM-Provider
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{08F93B14-1608-4A72-9CFA-457EECEDBBA7}' 0xffffffffffffffff 0xff -ets" # WebIo
+  }
+  if (-not $Activity -or $WinHTTP) {
     Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{7D44233D-3055-4B9C-BA64-0D47CA40A232}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-WinHttp
     Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{B3A7698A-0C45-44DA-B73D-E181C9B5C8E6}' 0xffffffffffffffff 0xff -ets" # WinHttp
-    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{DD5EF90A-6398-47A4-AD34-4DCECDEF795F}' 0xffffffffffffffff 0xff -ets" # HTTP Service Trace
   }
   if (-not $Activity -or $CAPI) {
     Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{5BBCA4A8-B209-48DC-A8C7-B23D3E5216FB}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-CAPI2
@@ -304,7 +315,7 @@ if (-not $Trace -and -not $Logs) {
   Write-Host "WinRM-Collect -Trace [[-Activity][-Fwd][-RemShell][-HTTP][-CAPI][-Kerberos][-CredSSP][-NTLM][-Schannel]] [-FwdCli][-EventLog][-Network][-Kernel][-PerfMon]"
   Write-Host "  Collects live trace"
   Write-Host ""
-  Write-Host "WMI-Collect -Logs -Trace [[-Activity][-Fwd][-RemShell][-HTTP][-CAPI][-Kerberos][-CredSSP][-NTLM][-Schannel]] [-FwdCli][-EventLog][-Network][-Kernel][-PerfMon]"
+  Write-Host "WinRM-Collect -Logs -Trace [[-Activity][-Fwd][-RemShell][-HTTP][-CAPI][-Kerberos][-CredSSP][-NTLM][-Schannel]] [-FwdCli][-EventLog][-Network][-Kernel][-PerfMon]"
   Write-Host "  Collects live trace then -Logs data"
   Write-Host ""
   Write-Host "Parameters for -Trace :"
