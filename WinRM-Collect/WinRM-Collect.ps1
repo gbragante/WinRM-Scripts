@@ -19,7 +19,7 @@ param( [string]$DataPath, `
        [switch]$Kernel 
 )
 
-$version = "WinRM-Collect (20230505)"
+$version = "WinRM-Collect (20230511)"
 $DiagVersion = "WinRM-Diag (20230207)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -322,7 +322,11 @@ if (-not $Trace -and -not $Logs) {
   Write-Host "  -Activity : Only trace WinRM basic log, less detailed and less noisy)"
   Write-Host "    -Fwd : Event Log Forwarding (enabled by default without -Activity)"
   Write-Host "    -RemShell : Remote Shell (enabled by default without -Activity)"
-  Write-Host "    -HTTP : WinHTTP and HTTP.SYS (enabled by default without -Activity)"
+  Write-Host "    -HTTPSYS : HTTP.SYS tracing"
+  Write-Host "     o If specified advanced HTTP.SYS tracing is enabled"
+  Write-Host "     o If not specified basic HTTP.SYS tracing is enabled"
+  Write-Host "     o With -Activity no HTTPS.SYS tracing, unless specified"
+  Write-Host "    -WinHTTP : WinHTTP (enabled by default without -Activity)"
   Write-Host "    -CAPI : CAPI (enabled by default without -Activity)"
   Write-Host "    -Kerberos : Kerberos (enabled by default without -Activity)"
   Write-Host "    -CredSSP : CredSSP (enabled by default without -Activity)"
@@ -695,6 +699,9 @@ if ($OSVer -gt 6.1 ) {
   Write-Log $cmd
   Invoke-Expression $cmd
 }
+
+Write-Log "Get-Module output"
+Get-Module -ListAvailable | Out-File -FilePath ($global:resDir + "\Get-Module.txt")
 
 Write-Log "Exporting netsh http settings"
 $cmd = "netsh http show sslcert >>""" + $global:resDir + "\netsh-http.txt""" + $RdrErr
