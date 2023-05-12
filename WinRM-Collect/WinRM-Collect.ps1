@@ -14,12 +14,13 @@ param( [string]$DataPath, `
        [switch]$PKU2U, `
        [switch]$Schannel, `
        [switch]$EventLog, `
+       [switch]$WMI, `
        [switch]$Network, `
        [switch]$PerfMon, `
        [switch]$Kernel 
 )
 
-$version = "WinRM-Collect (20230511)"
+$version = "WinRM-Collect (20230512)"
 $DiagVersion = "WinRM-Diag (20230207)"
 
 # by Gianni Bragante - gbrag@microsoft.com
@@ -95,6 +96,9 @@ Function WinRMTraceCapture {
   if ($FwdCli -or $EventLog) {
     Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{FC65DDD8-D6EF-4962-83D5-6E5CFE9CE148}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-Eventlog
     Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{B0CA1D82-539D-4FB0-944B-1620C6E86231}' 0xffffffffffffffff 0xff -ets" # EventlogTrace
+  }
+  if ($WMI) {
+    Invoke-CustomCommand "logman update trace 'WinRM-Trace' -p '{1418EF04-B0B4-4623-BF7E-D74AB47BBDAA}' 0xffffffffffffffff 0xff -ets" # WMI-Activity
   }
   if ($Network) {
     Invoke-CustomCommand ("netsh trace start capture=yes scenario=netconnection maxsize=2048 report=disabled tracefile='" + $TracesDir + "NETCAP-" + $env:COMPUTERNAME + ".etl'")
@@ -332,6 +336,7 @@ if (-not $Trace -and -not $Logs) {
   Write-Host "    -CredSSP : CredSSP (enabled by default without -Activity)"
   Write-Host "    -NTLM : NTLM (enabled by default without -Activity)"
   Write-Host "    -Schannel : Schannel (enabled by default without -Activity)"
+  Write-Host "    -WMI : WMI activity"
   Write-Host ""
   Write-Host "  -FwdCli : Additional client side treacing for EventLog forwarding"
   Write-Host "  -EventLog : Event Log tracing (included in -FwdCli)"
