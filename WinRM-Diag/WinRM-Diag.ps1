@@ -324,19 +324,39 @@ $tbcert | Export-Csv ($resDir + "\certificates.tsv") -noType -Delimiter "`t"
 
 # Diag start
 
-Function Get-UrlAcl {  # from https://www.powershellgallery.com/packages/HttpSys/1.0.1/Content/Get-UrlAcl.ps1
-    [CmdletBinding()] 
-    Param( 
-        [Parameter(Position=0)]
+function New-UrlAcl {
+    New-Object psobject -Property @{
+        Protocol = ''
+        Host = ''
+        Port = 0
+        Path = ''
+        Url = ''
+        Users = @()
+    }
+}
+
+function New-UrlAclUser {
+    New-Object psobject -Property @{
+        Name = ''
+        Listen = $false
+        Delegate = $false
+        SSDL = ''
+    }
+}
+
+function Get-UrlAcl {  # Taken from https://www.powershellgallery.com/packages/HttpSys/1.0.1/Content/Get-UrlAcl.ps1 and modified to also run on PowerShell 4
+    [CmdletBinding()]
+    param(
+        [parameter(Position=0)]
         [string]$Url,
-        [Parameter()]
+        [parameter()]
         [int[]]$Port,
         [string]$HostName,
         [string]$Protocol
     )
 
     $cmd = "netsh http show urlacl"
-    if(-not [string]::IsNullOrWhiteSpace($Url)){
+    if (-not [string]::IsNullOrWhiteSpace($Url)){
         $cmd += " url=$Url"
     }
 
@@ -345,19 +365,19 @@ Function Get-UrlAcl {  # from https://www.powershellgallery.com/packages/HttpSys
     $result = $result | Select-Object -Skip 4
 
     $items = @()
-    $item = [UrlAcl]::new()
-    $user = [UrlAclUser]::new()
-    for($i = 0; $i -lt $result.Length;$i++){
+    $item = New-UrlAcl
+    $user = New-UrlAclUser
+    for ($i = 0; $i -lt $result.Length; $i++){
         $line = $result[$i]
-        if([string]::IsNullOrWhiteSpace($line)){
+        if ([string]::IsNullOrWhiteSpace($line)){
             continue;
         }
         $splitIndex = $line.IndexOf(": ");
         $key = $line.Substring(0,$splitIndex).Trim();
-        $value = $line.Substring($splitIndex +2);
+        $value = $line.Substring($splitIndex + 2);
         
-        if($key -eq "Reserved Url"){
-            $item = [UrlAcl]::new()
+        if ($key -eq "Reserved Url"){
+            $item = New-UrlAcl
             $protocolSplitIndex = $value.IndexOf("://");
             $item.Protocol = $value.Substring(0, $protocolSplitIndex)
             $remainder = $value.Substring($protocolSplitIndex + 3)
@@ -376,53 +396,38 @@ Function Get-UrlAcl {  # from https://www.powershellgallery.com/packages/HttpSys
             $item.Url = $value
             $items += $item
         }
-        if($key -eq "User"){            
-            $user = [UrlAclUser]::new()
+        if ($key -eq "User"){            
+            $user = New-UrlAclUser
             $user.Name = $value
             $item.Users += $user
         }
-        if($key -eq "Listen"){
-            $user.Listen = if($value -eq "Yes") { $true } else { $false }
+        if ($key -eq "Listen"){
+            $user.Listen = if ($value -eq "Yes") { $true } else { $false }
         }
-        if($key -eq "Delegate"){
-            $user.Delegate = if($value -eq "Yes") { $true } else { $false }
+        if ($key -eq "Delegate"){
+            $user.Delegate = if ($value -eq "Yes") { $true } else { $false }
         }
-        if($key -eq "SDDL"){
+        if ($key -eq "SDDL"){
             $user.SSDL = $value
         }
     }
-    if(-not [string]::IsNullOrWhiteSpace($HostName)){
+    if (-not [string]::IsNullOrWhiteSpace($HostName)){
         $items = $items | Where-Object { $_.Host -eq $HostName }
     }
-    if(-not [string]::IsNullOrWhiteSpace($Protocol)){
+    if (-not [string]::IsNullOrWhiteSpace($Protocol)){
         $items = $items | Where-Object { $_.Protocol -eq $Protocol }
     }
 
-    if($null -ne $Port){
-        if($Port -isnot [System.Array]){
+    if ($null -ne $Port){
+        if ($Port -isnot [System.Array]){
             $Port = @($Port)
         }
-        if($Port.Length -ge 0){
+        if ($Port.Length -ge 0){
             $items = $items | Where-Object { $Port -contains $_.Port }
         }
     }
 
     return $items
-}
-
-Class UrlAcl{
-    [string]$Protocol
-    [string]$Host
-    [int]$Port    
-    [string]$Path
-    [string]$Url
-    [UrlAclUser[]]$Users    
-}
-Class UrlAclUser{
-    [string]$Name
-    [boolean]$Listen
-    [boolean]$Delegate
-    [string]$SSDL
 }
 
 Write-Diag "Retrieving URLACL information"
@@ -583,6 +588,19 @@ if ($HTTPListenerFound) {
   $HTTPURLACL = ($urlACL | Where-Object Port -eq 5985)
   if ($HTTPURLACL) {
     Write-Diag "[INFO] URLACL for port 5985 is present"
+    if ($HTTPURLACL.Protocol -ne "http") {
+      Write-Diag ("[ERROR] The protocol for port 5985 is not HTTP (" + $HTTPURLACL.Protocol + ")")
+    }
+    if ($HTTPURLACL.Users | Where-Object Name -eq "NT SERVICE\WinRM") {
+      Write-Diag ("[INFO] NT SERVICE\WinRM has permissions on port 5985")
+    } else {
+      Write-Diag ("[ERROR] NT SERVICE\WinRM is missing permissions on port 5985")
+    }
+    if ($HTTPURLACL.Users | Where-Object Name -eq "NT SERVICE\Wecsvc") {
+      Write-Diag ("[INFO] NT SERVICE\Wecsvc has permissions on port 5985")
+    } else {
+      Write-Diag ("[ERROR] NT SERVICE\Wecsvc is missing permissions on port 5985")
+    }
   } else {
     Write-Diag "[ERROR] HTTP Listener found but URLACL for port 5985 is missing"
   }
@@ -592,9 +610,22 @@ if ($HTTPListenerFound) {
 
 if ($HTTPSListenerFound) {
   Write-Diag ("[INFO] HTTP listener found")
-  $HTTPSURLACL = ($urlACL | Where-Object Port -eq 5985)
-  if ($HTTSPURLACL) {
+  $HTTPSURLACL = ($urlACL | Where-Object Port -eq 5986)
+  if ($HTTPSURLACL) {
     Write-Diag "[INFO] URLACL for port 5986 is present"
+    if ($HTTPSURLACL.Protocol -ne "https") {
+      Write-Diag ("[ERROR] The protocol for port 5986 is not HTTPS (" + $HTTPSURLACL.Protocol + ")")
+    }
+    if ($HTTPSURLACL.Users | Where-Object Name -eq "NT SERVICE\WinRM") {
+      Write-Diag ("[INFO] NT SERVICE\WinRM has permissions on port 5986")
+    } else {
+      Write-Diag ("[ERROR] NT SERVICE\WinRM is missing permissions on port 5986")
+    }
+    if ($HTTPSURLACL.Users | Where-Object Name -eq "NT SERVICE\Wecsvc") {
+      Write-Diag ("[INFO] NT SERVICE\Wecsvc has permissions on port 5986")
+    } else {
+      Write-Diag ("[ERROR] NT SERVICE\Wecsvc is missing permissions on port 5986")
+    }
   } else {
     Write-Diag "[ERROR] HTTPS Listener found but URLACL for port 5986 is missing"
   }
