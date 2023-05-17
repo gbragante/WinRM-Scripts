@@ -20,8 +20,8 @@ param( [string]$DataPath, `
        [switch]$Kernel 
 )
 
-$version = "WinRM-Collect (20230512)"
-$DiagVersion = "WinRM-Diag (20230207)"
+$version = "WinRM-Collect (20230516)"
+$DiagVersion = "WinRM-Diag (20230515)"
 
 # by Gianni Bragante - gbrag@microsoft.com
 
@@ -758,6 +758,11 @@ if (Test-Path HKLM:\SOFTWARE\Microsoft\InetStp) {
   Write-Log "IIS is not installed"
 }
 
+if (Test-Path -Path ($env:windir + "\System32\inetsrv\Config\ApplicationHost.config")) {
+  Write-Log "IIS ApplicationHost.config"
+  Copy-Item "C:\Windows\System32\inetsrv\Config\ApplicationHost.config" ($global:resDir + "\ApplicationHost.config")
+}
+
 $cmd = "setspn -L " + $env:computername + " >>""" + $global:resDir + "\SPN.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression $cmd
@@ -885,10 +890,119 @@ Write-Diag ("[INFO] " + $DiagVersion)
 
 # Diag start
 
+function New-UrlAcl {
+    New-Object psobject -Property @{
+        Protocol = ''
+        Host = ''
+        Port = 0
+        Path = ''
+        Url = ''
+        Users = @()
+    }
+}
+
+function New-UrlAclUser {
+    New-Object psobject -Property @{
+        Name = ''
+        Listen = $false
+        Delegate = $false
+        SSDL = ''
+    }
+}
+
+function Get-UrlAcl {  # Taken from https://www.powershellgallery.com/packages/HttpSys/1.0.1/Content/Get-UrlAcl.ps1 and modified to also run on PowerShell 4
+    [CmdletBinding()]
+    param(
+        [parameter(Position=0)]
+        [string]$Url,
+        [parameter()]
+        [int[]]$Port,
+        [string]$HostName,
+        [string]$Protocol
+    )
+
+    $cmd = "netsh http show urlacl"
+    if (-not [string]::IsNullOrWhiteSpace($Url)){
+        $cmd += " url=$Url"
+    }
+
+    $result = Invoke-Expression $cmd
+
+    $result = $result | Select-Object -Skip 4
+
+    $items = @()
+    $item = New-UrlAcl
+    $user = New-UrlAclUser
+    for ($i = 0; $i -lt $result.Length; $i++){
+        $line = $result[$i]
+        if ([string]::IsNullOrWhiteSpace($line)){
+            continue;
+        }
+        $splitIndex = $line.IndexOf(": ");
+        $key = $line.Substring(0,$splitIndex).Trim();
+        $value = $line.Substring($splitIndex + 2);
+        
+        if ($key -eq "Reserved Url"){
+            $item = New-UrlAcl
+            $protocolSplitIndex = $value.IndexOf("://");
+            $item.Protocol = $value.Substring(0, $protocolSplitIndex)
+            $remainder = $value.Substring($protocolSplitIndex + 3)
+
+            $pathSplitIndex = $remainder.IndexOf("/")
+
+            $hostDetails = $remainder.Substring(0, $pathSplitIndex)
+            
+            $hostParts = $hostDetails.Split(':')
+
+            $item.Host = $hostParts[0]
+            $item.Port = $hostParts[1]
+
+            $item.Path = $remainder.Substring($pathSplitIndex)
+
+            $item.Url = $value
+            $items += $item
+        }
+        if ($key -eq "User"){            
+            $user = New-UrlAclUser
+            $user.Name = $value
+            $item.Users += $user
+        }
+        if ($key -eq "Listen"){
+            $user.Listen = if ($value -eq "Yes") { $true } else { $false }
+        }
+        if ($key -eq "Delegate"){
+            $user.Delegate = if ($value -eq "Yes") { $true } else { $false }
+        }
+        if ($key -eq "SDDL"){
+            $user.SSDL = $value
+        }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($HostName)){
+        $items = $items | Where-Object { $_.Host -eq $HostName }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Protocol)){
+        $items = $items | Where-Object { $_.Protocol -eq $Protocol }
+    }
+
+    if ($null -ne $Port){
+        if ($Port -isnot [System.Array]){
+            $Port = @($Port)
+        }
+        if ($Port.Length -ge 0){
+            $items = $items | Where-Object { $Port -contains $_.Port }
+        }
+    }
+
+    return $items
+}
+
+Write-Diag "Retrieving URLACL information"
+$urlACL = Get-UrlAcl
+
 Write-Diag "[INFO] Checking HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\Schannel\ClientAuthTrustMode"
 $ClientAuthTrustMode = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\Schannel" | Select-Object -ExpandProperty "ClientAuthTrustMode" -ErrorAction SilentlyContinue)
 
-if ($null -eq $ClientAuthTrustMode -or $ClientAuthTrustMode -eq 0) {
+if ($ClientAuthTrustMode -eq $null -or $ClientAuthTrustMode -eq 0) {
   Write-Diag "[WARNING]   0 Machine Trust (default) - Requires that the client certificate is issued by a certificate in the Trusted Issuers list."  
 } elseif ($ClientAuthTrustMode -eq 1) {
   Write-Diag "[WARNING]   1 Exclusive Root Trust - Requires that a client certificate chains to a root certificate contained in the caller-specified trusted issuer store. The certificate must also be issued by an issuer in the Trusted Issuers list"  
@@ -988,6 +1102,20 @@ if ($OSVer -gt 6.1) {
   $iplist = Get-NetIPAddress
 }
 
+$pol = Get-ItemProperty HKLM:\SOFTWARE\Policies\Microsoft\Windows\WinRM\Service  -Name HttpCompatibilityListener -ErrorAction SilentlyContinue
+if ($pol) {
+  if ($pol.HttpCompatibilityListener -eq 1) {
+    Write-Diag ("[WARNING] HTTP Compatibility listener (port 80) is enabled")
+  }
+}
+
+$pol = Get-ItemProperty HKLM:\SOFTWARE\Policies\Microsoft\Windows\WinRM\Service  -Name HttpsCompatibilityListener -ErrorAction SilentlyContinue
+if ($pol) {
+  if ($pol.HttpsCompatibilityListener -eq 1) {
+    Write-Diag ("[WARNING] HTTPS Compatibility listener (port 443) is enabled")
+  }
+}
+
 Write-Diag "[INFO] Browsing listeners"
 $HTTPListenerFound = $false
 $listeners = Get-ChildItem WSMan:\localhost\Listener
@@ -1000,6 +1128,7 @@ foreach ($listener in $listeners) {
   foreach ($value in $prop) {
     if ($value.Name -eq "CertificateThumbprint") {
       if ($listener.keys[0].Contains("HTTPS")) {
+        $HTTPSListenerFound = $true
         Write-Diag "[INFO] Found HTTPS listener"
         $listenerThumbprint = $value.Value.ToLower()
         Write-Diag "[INFO] Found listener certificate $listenerThumbprint"
@@ -1022,8 +1151,50 @@ foreach ($listener in $listeners) {
 
 if ($HTTPListenerFound) {
   Write-Diag ("[INFO] HTTP listener found")
+  $HTTPURLACL = ($urlACL | Where-Object Port -eq 5985)
+  if ($HTTPURLACL) {
+    Write-Diag "[INFO] URLACL for port 5985 is present"
+    if ($HTTPURLACL.Protocol -ne "http") {
+      Write-Diag ("[ERROR] The protocol for port 5985 is not HTTP (" + $HTTPURLACL.Protocol + ")")
+    }
+    if ($HTTPURLACL.Users | Where-Object Name -eq "NT SERVICE\WinRM") {
+      Write-Diag ("[INFO] NT SERVICE\WinRM has permissions on port 5985")
+    } else {
+      Write-Diag ("[ERROR] NT SERVICE\WinRM is missing permissions on port 5985")
+    }
+    if ($HTTPURLACL.Users | Where-Object Name -eq "NT SERVICE\Wecsvc") {
+      Write-Diag ("[INFO] NT SERVICE\Wecsvc has permissions on port 5985")
+    } else {
+      Write-Diag ("[ERROR] NT SERVICE\Wecsvc is missing permissions on port 5985")
+    }
+  } else {
+    Write-Diag "[ERROR] HTTP Listener found but URLACL for port 5985 is missing"
+  }
 } else {
   Write-Diag ("[ERROR] The HTTP listener is missing")
+}
+
+if ($HTTPSListenerFound) {
+  Write-Diag ("[INFO] HTTP listener found")
+  $HTTPSURLACL = ($urlACL | Where-Object Port -eq 5986)
+  if ($HTTPSURLACL) {
+    Write-Diag "[INFO] URLACL for port 5986 is present"
+    if ($HTTPSURLACL.Protocol -ne "https") {
+      Write-Diag ("[ERROR] The protocol for port 5986 is not HTTPS (" + $HTTPSURLACL.Protocol + ")")
+    }
+    if ($HTTPSURLACL.Users | Where-Object Name -eq "NT SERVICE\WinRM") {
+      Write-Diag ("[INFO] NT SERVICE\WinRM has permissions on port 5986")
+    } else {
+      Write-Diag ("[ERROR] NT SERVICE\WinRM is missing permissions on port 5986")
+    }
+    if ($HTTPSURLACL.Users | Where-Object Name -eq "NT SERVICE\Wecsvc") {
+      Write-Diag ("[INFO] NT SERVICE\Wecsvc has permissions on port 5986")
+    } else {
+      Write-Diag ("[ERROR] NT SERVICE\Wecsvc is missing permissions on port 5986")
+    }
+  } else {
+    Write-Diag "[ERROR] HTTPS Listener found but URLACL for port 5986 is missing"
+  }
 }
 
 $svccert = Get-Item WSMan:\localhost\Service\CertificateThumbprint
@@ -1307,7 +1478,7 @@ if ($clientcert.Count -gt 0) {
       if ($value.Name -eq "Issuer") {
         ChkCert -cert $value.Value -descr "mapping" -store "(Store = 'Root' or Store = 'CA')"
       } elseif ($value.Name -eq "UserName") {
-        $usr = Get-CimInstance -ClassName Win32_UserAccount | Where {$_.Name -eq $value.value}
+        $usr = Get-CimInstance -ClassName Win32_UserAccount | Where-Object {$_.Name -eq $value.value}
         if ($usr) {
           if ($usr.Disabled) {
             Write-Diag ("[ERROR]    The local user account " + $value.value + " is disabled")
