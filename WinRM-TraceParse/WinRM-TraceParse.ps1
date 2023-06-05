@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20220428 
+# Version 20230605
 
 param (
   [string]$InputFile,
@@ -87,6 +87,8 @@ Function ConvertIP {
   if ($Addr.Substring(0,4) -eq "0x02") {
     $IPAddr = ([int32]("0x" + $Addr.Substring(10,2))).ToString() + "." + ([int32]("0x" + $Addr.Substring(12,2))).ToString() + "." + ([int32]("0x" + $Addr.Substring(14,2))).ToString() + "." + ([int32]("0x" + $Addr.Substring(16,2))).ToString()
     return $IPAddr
+  } else {
+    return $Addr
   }
 }
 
