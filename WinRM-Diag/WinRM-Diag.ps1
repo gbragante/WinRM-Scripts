@@ -1,5 +1,5 @@
 param( [string]$Path, [switch]$AcceptEula )
-$DiagVersion = "WinRM-Diag (20230515)"
+$DiagVersion = "WinRM-Diag (20230609)"
 # by Gianni Bragante gbrag@microsoft.com
 
 Function FindSep {
@@ -109,6 +109,18 @@ Function GetSubVal {
     $cm = $SubProp.ConfigurationMode
     $subVal = (Get-Item -Path ("HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector\ConfigurationModes\" + $cm) | Get-ItemProperty)
     return $SubVal.($SubValue)
+  }
+}
+
+Function Get-LocalGroupNameBySid {
+  param ($SIDString)
+
+  $group = New-Object System.Security.Principal.SecurityIdentifier($SIDString)
+
+  if ($group -ne $null) {
+    return $group.Translate([System.Security.Principal.NTAccount]).Value -replace '.+\\'
+  } else {
+    return $null
   }
 }
 
@@ -944,11 +956,16 @@ if ($aCert.Count -gt 0) {
 }
 
 if ($isForwarder) {
-  $evtLogReaders = (Get-CimInstance -Query ("Associators of {Win32_Group.Domain='" + $env:COMPUTERNAME + "',Name='Event Log Readers'} where Role=GroupComponent") | Where {$_.Name -eq "NETWORK SERVICE"} | Measure-Object)
-  if ($evtLogReaders.Count -gt 0) {
-    Write-Diag "[INFO] The NETWORK SERVICE account is member of the Event Log Readers group"
+  $evtLRGrName = Get-LocalGroupNameBySid "S-1-5-32-573"
+  if ($evtLRGrName) {
+    $evtLogReaders = (Get-CimInstance -Query ("Associators of {Win32_Group.Domain='" + $env:COMPUTERNAME + "',Name='$evtLRGrName'} where Role=GroupComponent") | Where {$_.Name -eq "NETWORK SERVICE"} | Measure-Object)
+    if ($evtLogReaders.Count -gt 0) {
+      Write-Diag "[INFO] The NETWORK SERVICE account is member of the $evtLRGrName group"
+    } else {
+      Write-Diag "[WARNING] The NETWORK SERVICE account is NOT member of the $evtLRGrName group, the events in the Security log cannot be forwarded"
+    }
   } else {
-    Write-Diag "[WARNING] The NETWORK SERVICE account is NOT member of the Event Log Readers group, the events in the Security log cannot be forwarded"
+    Write-Diag "[ERROR] Cannot find the Event Log Readers group"
   }
 }
 
