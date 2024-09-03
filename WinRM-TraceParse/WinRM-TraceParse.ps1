@@ -1,9 +1,9 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20230605
+# Version 20240903
 
 param (
   [string]$InputFile,
-  [switch]$OneTrailingSpace
+  [switch]$OneTrailingSpace = $true
 )
 
 Function ReadLine {
@@ -182,6 +182,7 @@ if ($OneTrailingSpace) {
 } else {
   $TrimStr = "  "
 }
+
 $TotEvents = 0
 $TotPkt = 0
 $nErrors = 0
