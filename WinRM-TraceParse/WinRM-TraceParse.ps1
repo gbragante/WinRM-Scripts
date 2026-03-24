@@ -1,5 +1,5 @@
 # WinRM-TraceParse - by Gianni Bragante gbrag@microsoft.com
-# Version 20240903
+# Version 20260324
 
 param (
   [string]$InputFile,
@@ -98,7 +98,6 @@ if ($InputFile -eq "") {
 }
 
 $time = ""
-$LineThread = ""
 $LinePid = ""
 $LineTid = ""
 
@@ -260,12 +259,15 @@ while (-not $sr.EndOfStream) {
 
     while (-not $sr.EndOfStream) {
       if ($line.Length -gt 1) {
-        if (($line.Length -gt 25) -and ($line.Substring(0,25) -match "[A-Fa-f0-9]{4,5}.[A-Fa-f0-9]{4,5}::")) { break }  # If this is a trace line and not extra content it will treat this appropriately
+        if (
+            (($line.Length -gt 25) -and ($line.Substring(0,25) -match "[A-Fa-f0-9]{4,5}\.[A-Fa-f0-9]{4,5}::")) `
+            -or ($line -match '^\[\d+\][A-Fa-f0-9]{4,5}\.[A-Fa-f0-9]{4,5}::')
+          ) { break }
+
         $xmlPart = (TrimTrailing $line $TrimStr)
-        #sb $xmlLine[$thread] = $xmlLine[$thread] + $xmlPart
-        [void]$xmlLine[$thread].Append($xmlPart) 
+        [void]$xmlLine[$thread].Append($xmlPart)
       }
-      
+
       $line = $sr.ReadLine()
       $lines = $lines + 1
     }
@@ -298,7 +300,6 @@ while (-not $sr.EndOfStream) {
       $xmlEvt = New-Object -TypeName System.Xml.XmlDocument
       $xmlPL = New-Object -TypeName System.Xml.XmlDocument
       $xmlShell = New-Object -TypeName System.Xml.XmlDocument
-      $xmlT = New-Object -TypeName System.Xml.XmlDocument
 
       try {
         $xmlEvt.LoadXml($xmlPkt)
@@ -328,6 +329,7 @@ while (-not $sr.EndOfStream) {
           $row.Message = ($xmlEvt.Envelope.Header.Action.'#text'| Split-Path -Leaf)
         } else {
           $row.Message = ($xmlEvt.Envelope.Header.Action | Split-Path -Leaf)
+          Write-Host ""
         }
       }
 
@@ -683,7 +685,7 @@ while (-not $sr.EndOfStream) {
     Write-Host $lines $thread $time $To $row.Action
 
     }
-  } elseif ((($line -match  "Microsoft-Windows-CAPI2/Operational") -or ($line -match  "Microsoft_Windows_CAPI2/Operational") ) -and -not ($line -match "SOAP \[")) {
+  } elseif ((($line -match  "Microsoft-Windows-CAPI2/Operational") -or ($line -match  "Microsoft_Windows_CAPI2/Operational") ) -and -not ($line -match "\] SOAP \[")) {
     $npos=$line.IndexOf("::")
     $time = ($line.Substring($nPos + 2 , 25))
     $timeFile = $time.Substring(9).Replace(":","").Replace(".","-")
@@ -725,7 +727,7 @@ while (-not $sr.EndOfStream) {
 
     $line = $sr.ReadLine()
     $lines = $lines + 1
-  } elseif (($line -match  "HTTPServiceChannel16 ") -or ($line -match  "HTTP Service Channel")-and -not ($line -match "SOAP \[")) {
+  } elseif (($line -match  "HTTPServiceChannel16 ") -or ($line -match  "HTTP Service Channel")-and -not ($line -match "\] SOAP \[")) {
     if ($line -match "Request received") {
       $LP = LineParam
       $rowHTTP = $tbHTTP.NewRow()
@@ -760,38 +762,97 @@ while (-not $sr.EndOfStream) {
     $line = $sr.ReadLine()
     $lines = $lines + 1
 
-  } elseif ($line -match  "CRequestContext::GetFaultXMLPrivate()") {
+  } elseif ($line -match "CRequestContext::GetFaultXMLPrivate\(\)") {
     $faultxml = FindSep $line -Left "fault string: "
+    $nextLineAlreadyRead = $false
+
     if ($faultxml) {
-      $xmlFault = New-Object -TypeName System.Xml.XmlDocument
-      $xmlFault.LoadXml($faultxml)
+      $xmlFault = $null
       $LP = LineParam
 
-      $filename = "out-" + $LP.time.Substring(9).Replace(":","").Replace(".","-") + "-FT.xml" 
-      $faultxml | Out-File -FilePath ($dirName + "\" + $FileName) 
-
-      $row = $tbEvt.NewRow()
-      $row.Time = $LP.Time
-      $row.Pid = $LP.PID
-      $row.Tid = $LP.TID
-      $row.Type = "FT"
-      $row.Action = $xmlFault.WSManFault.f
-      $row.Computer = $xmlfault.WSManFault.Machine
-      $row.FileName = $filename
-      $row.FileSize = $faultxml.Length
-
-      if ($xmlfault.WSManFault.Message.ProviderFault) {
-        $row.Message = $xmlfault.WSManFault.Message.ProviderFault.WSManFault.Code + " - " + $xmlfault.WSManFault.Message.ProviderFault.provider + " - " + $xmlfault.WSManFault.Message.ProviderFault.WSManFault.Message
-      } else {
-        $row.Message = $xmlfault.WSManFault.Code + " - " + $xmlfault.WSManFault.Message
+      # Attempt 1: parse as-is
+      try {
+        $xmlFault = New-Object -TypeName System.Xml.XmlDocument
+        $xmlFault.LoadXml($faultxml)
+      }
+      catch {
+        $xmlFault = $null
       }
 
-      $tbEvt.Rows.Add($row)
+      # Attempt 2: read one more line and try again
+      if (-not $xmlFault -and -not $sr.EndOfStream) {
+        $nextLine = $sr.ReadLine()
+        $lines = $lines + 1
+        $nextLineAlreadyRead = $true
+
+        if ($nextLine -notmatch '^\[\d+\]') {
+          $faultxml = $faultxml + "`r`n" + $nextLine
+
+          try {
+            $xmlFault = New-Object -TypeName System.Xml.XmlDocument
+            $xmlFault.LoadXml($faultxml)
+          }
+          catch {
+            $xmlFault = $null
+          }
+        } else {
+          # It was actually the next trace line, so don't append it.
+          $line = $nextLine
+        }
+      }
+
+      # Attempt 3: artificially close missing tags and try again
+      if (-not $xmlFault) {
+        $faultxmlFixed = $faultxml
+
+        if ($faultxmlFixed -notmatch '</f:Message>') {
+          $faultxmlFixed += '</f:Message>'
+        }
+        if ($faultxmlFixed -notmatch '</f:WSManFault>') {
+          $faultxmlFixed += '</f:WSManFault>'
+        }
+
+        try {
+          $xmlFault = New-Object -TypeName System.Xml.XmlDocument
+          $xmlFault.LoadXml($faultxmlFixed)
+          $faultxml = $faultxmlFixed
+        }
+        catch {
+          $xmlFault = $null
+        }
+      }
+
+      # Success: save XML and emit row
+      if ($xmlFault) {
+        $filename = "out-" + $LP.Time.Substring(9).Replace(":","").Replace(".","-") + "-FT.xml"
+        $faultxml | Out-File -FilePath ($dirName + "\" + $filename)
+
+        $row = $tbEvt.NewRow()
+        $row.Time = $LP.Time
+        $row.Pid = $LP.PID
+        $row.Tid = $LP.TID
+        $row.Type = "FT"
+        $row.Action = ""
+        $row.Computer = $xmlFault.WSManFault.Machine
+        $row.FileName = $filename
+        $row.FileSize = $faultxml.Length
+
+        if ($xmlFault.WSManFault.Message.ProviderFault) {
+          $row.Message = $xmlFault.WSManFault.Message.ProviderFault.WSManFault.Code + " - " +
+                         $xmlFault.WSManFault.Message.ProviderFault.provider + " - " +
+                         $xmlFault.WSManFault.Message.ProviderFault.WSManFault.Message
+        } else {
+          $row.Message = $xmlFault.WSManFault.Code + " - " + $xmlFault.WSManFault.Message
+        }
+
+        $tbEvt.Rows.Add($row)
+      }
     }
 
-    $line = $sr.ReadLine()
-    $lines = $lines + 1
-
+    if (-not $nextLineAlreadyRead -or ($line -notmatch '^\[\d+\]')) {
+      $line = $sr.ReadLine()
+      $lines = $lines + 1
+    }
   } else {
     $line = $sr.ReadLine()
     $lines = $lines + 1
